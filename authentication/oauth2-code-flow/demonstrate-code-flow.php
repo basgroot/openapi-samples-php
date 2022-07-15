@@ -10,6 +10,10 @@ Initiate a sign in using this link:<br /><a href="https://sim.logonvalidation.ne
 
 <?php
 
+//ini_set('display_errors', 1);
+//ini_set('display_startup_errors', 1);
+//error_reporting(E_ALL);
+
 /*
  *  This sample demonstrates the following:
  *    1. Get a token,
@@ -50,48 +54,50 @@ function checkState() {
     echo 'CSRF token in the state parameter is available and expected, so the redirect is trusted and a token can be requested.<br />';
 }
 
-function createRequestContext($method, $header, $data) {
-    $http = array(
-                'method' => $method,
-                'header' => $header,
-                'ignore_errors' => false
-            );
-    if ($method == 'POST' || $method == 'PUT') {
-        $http['content'] = $data;
+function configureCurl() {
+    $ch = curl_init();
+    if (defined('CURL_VERSION_HTTP2') && (curl_version()['features'] & CURL_VERSION_HTTP2) !== 0) {
+        curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_VERSION_HTTP2);  // CURL_HTTP_VERSION_2_0 (attempts HTTP 2)
     }
-    return stream_context_create(
-        array(
-            'http' => $http,
-            'ssl' => array(
-                // This Mozilla CA certificate store is downloaded from:
-                // https://curl.haxx.se/docs/caextract.html
-                // This bundle was generated at Tue Apr 26 03:12:05 2022 GMT.
-                'cafile' => 'cacert-2022-04-26.pem',
-                'verify_peer' => true,
-                'verify_peer_name' => true
-            )
-        )
-    );
+    // https://www.php.net/manual/en/function.curl-setopt.php
+    curl_setopt_array($ch, [
+        CURLOPT_FAILONERROR    => true,  // Required for HTTP error codes to be reported via call to curl_error($ch)
+        CURLOPT_SSL_VERIFYPEER => true,  // false to stop cURL from verifying the peer's certificate.
+        CURLOPT_CAINFO         => 'cacert-2022-04-26.pem',
+        CURLOPT_SSL_VERIFYHOST => 2,  // 2 to verify that a Common Name field or a Subject Alternate Name field in the SSL peer certificate matches the provided hostname.
+        CURLOPT_FOLLOWLOCATION => false,  // true to follow any "Location: " header that the server sends as part of the HTTP header.
+        CURLOPT_RETURNTRANSFER => true  // true to return the transfer as a string of the return value of curl_exec() instead of outputting it directly.
+    ]);
+    return $ch;
 }
 
-function doRequest($url, $context) {
-    $result = @file_get_contents($url, false, $context);
-    if (!$result) {
-        if ($http_response_header[0] == 'HTTP/1.1 201 Created' || $http_response_header[0] == 'HTTP/1.1 202 Accepted') {
-            // No response is expected.
-            return null;
-        }
-        die('Error: ' . error_get_last()['message'] . ' (' . $url . ')');
-    }
-    $responseJson = json_decode($result);
+function getTokenResponse($postData) {
+    global $configuration;
+    $ch = configureCurl();
+    curl_setopt_array($ch, array(
+        CURLOPT_URL        => $configuration->tokenEndpoint,
+        CURLOPT_POST       => true,
+        CURLOPT_POSTFIELDS => $postData
+    ));
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    // If you are looking here, probably something is wrong.
+    // Is PHP properly installed (including OpenSSL extension)?
+    // Troubleshooting:
+    //  You can follow these steps to see what is going wrong:
+    //  1. Run PHP in development mode, with warnings displayed, by using the development.ini.
+    //  2. Do a var_dump of all variables and exit with "die();":
+    $responseJson = json_decode($response);
     if (json_last_error() == JSON_ERROR_NONE) {
         if (property_exists($responseJson, 'error')) {
             die('Error: <pre>' . $responseJson . '</pre>');
         }
+        echo 'New token received: <pre>' . json_encode($responseJson, JSON_PRETTY_PRINT) . '</pre><br />';
         return $responseJson;
     } else {
         // Something bad happened, no JSON in response.
-        die('Error: ' . $result . ' (' . $url . ')');
+        die('Error: ' . $response . ' (' . $configuration->tokenEndpoint . ')');
     }
 }
 
@@ -101,55 +107,95 @@ function doRequest($url, $context) {
 function getToken() {
     global $configuration;
     $code = filter_input(INPUT_GET, 'code', FILTER_SANITIZE_URL);
-    $header = array(
-        'Content-type: application/x-www-form-urlencoded'
+    echo 'Requesting a token with the code from the URL..<br />';
+    return getTokenResponse(
+        array(
+            'client_id'     => $configuration->appKey,
+            'client_secret' => $configuration->appSecret,
+            'grant_type'    => 'authorization_code',
+            'code'          => $code
+        )
     );
-    $data = array(
-        'client_id' => $configuration->appKey,
-        'client_secret' => $configuration->appSecret,
-        'grant_type' => 'authorization_code',
-        'code' => $code
-    );
-    $context = createRequestContext('POST', $header, http_build_query($data));
-    // If you are looking here, probably something is wrong.
-    // Is PHP properly installed (including OpenSSL extension)?
-    // Troubleshooting:
-    //  You can follow these steps to see what is going wrong:
-    //  1. Run PHP in development mode, with warnings displayed, by using the development.ini.
-    //  2. Remove the @ before "file_get_contents".
-    //  3. Echo the $result and exit with "die();":
-    //     $result = file_get_contents($configuration->tokenEndpoint, false, $context);
-    //     echo $result;
-    //     die();
-    echo 'Requesting token..<br />';
-    $responseJson = doRequest($configuration->tokenEndpoint, $context);
-    echo 'New token from code: <pre>' . json_encode($responseJson, JSON_PRETTY_PRINT) . '</pre><br />';
-    return $responseJson;
 }
 
-function getUserFromApi($accessToken) {
+function getApiResponse($accessToken, $method, $url, $data) {
     global $configuration;
+    $ch = configureCurl();
     $header = array(
         'Authorization: Bearer ' . $accessToken
     );
-    $context = createRequestContext('GET', $header, null);
+    switch ($method) {
+        case 'POST':
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+            $header[] = 'Content-Type: application/json; charset=utf-8';  // This is different than the token request content!
+            break;
+        case 'PUT':
+            //curl_setopt($ch, CURLOPT_PUT, true);
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+            $header[] = 'Content-Type: application/json; charset=utf-8';  // This is different than the token request content!
+            break;
+        case 'PATCH':
+            //curl_setopt($ch, CURLOPT_PUT, true);
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PATCH');
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+            $header[] = 'Content-Type: application/json; charset=utf-8';  // This is different than the token request content!
+            break;
+    }
+    curl_setopt($ch, CURLOPT_HEADER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $header);
+    curl_setopt($ch, CURLOPT_URL, $configuration->openApiBaseUrl . $url);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+    curl_close($ch);
+    // Separate response header from body
+    $headers = explode("\n", substr($response, 0, $header_size));
+    $body = substr($response, $header_size);
+    echo 'Headers:<pre>';
+    foreach ($headers as $header)  {
+        echo $header ."\n";
+    }
+    echo '</pre>';
+    if ($body == '') {
+        if ($httpCode == 201 || $httpCode == 202) {
+            // No response body
+            return null;
+        } else {
+            die('Error with response HTTP ' . $httpCode);
+        }
+    }
+    $responseJson = json_decode($body);
+    if (json_last_error() == JSON_ERROR_NONE) {
+        return $responseJson;
+    } else {
+        // Something bad happened, no JSON in response.
+        die('Error: ' . $response . ' (' . $url . ')');
+    }
+}
+
+function getUserFromApi($accessToken) {
     echo 'Requesting user data from the API..<br />';
-    $responseJson = doRequest($configuration->openApiBaseUrl . 'port/v1/users/me', $context);
+    $responseJson = getApiResponse($accessToken, 'GET', 'port/v1/users/me', null);
     echo 'Response from /users endpoint: <pre>' . json_encode($responseJson, JSON_PRETTY_PRINT) . '</pre><br />';
 }
 
-function setTradeSession($accessToken) {
-    global $configuration;
-    $header = array(
-        'Authorization: Bearer ' . $accessToken,
-        'Content-type: application/json; charset=utf-8'  // This is different than the token request content!
-    );
+function precheckOrder($accessToken) {
     $data = array(
         'TradeLevel' => 'FullTradingAndChat'
     );
-    $context = createRequestContext('PUT', $header, json_encode($data));
+    echo 'Updating user..<br />';
+    $responseJson = getApiResponse($accessToken, 'POST', 'trade/v2/orders/precheck', $data);
+    echo 'Elevation of session requested.<br />';
+}
+
+function setTradeSession($accessToken) {
+    $data = array(
+        'TradeLevel' => 'FullTradingAndChat'
+    );
     echo 'Elevating Trade Session using PUT..<br />';
-    $responseJson = doRequest($configuration->openApiBaseUrl . 'root/v1/sessions/capabilities', $context);
+    $responseJson = getApiResponse($accessToken, 'PUT', 'root/v1/sessions/capabilities', $data);
     echo 'Elevation of session requested.<br />';
 }
 
@@ -159,25 +205,22 @@ function setTradeSession($accessToken) {
  */
 function refreshToken($refreshToken) {
     global $configuration;
-    $header = array(
-        'Content-type: application/x-www-form-urlencoded'
+    $code = filter_input(INPUT_GET, 'code', FILTER_SANITIZE_URL);
+    echo 'Requesting a new token with the refresh_token..<br />';
+    return getTokenResponse(
+        array(
+            'client_id'     => $configuration->appKey,
+            'client_secret' => $configuration->appSecret,
+            'grant_type' => 'refresh_token',
+            'refresh_token' => $refreshToken
+        )
     );
-    $data = array(
-        'client_id' => $configuration->appKey,
-        'client_secret' => $configuration->appSecret,
-        'grant_type' => 'refresh_token',
-        'refresh_token' => $refreshToken
-    );
-    $context = createRequestContext('POST', $header, http_build_query($data));
-    echo 'Refreshing token..<br />';
-    $responseJson = doRequest($configuration->tokenEndpoint, $context);
-    echo 'New token from refresh: <pre>' . json_encode($responseJson, JSON_PRETTY_PRINT) . '</pre><br />';
-    return $responseJson;
 }
 
 checkForErrors();
 checkState();
 $tokenObject = getToken();
+//precheckOrder($tokenObject->access_token);
 getUserFromApi($tokenObject->access_token);
 setTradeSession($tokenObject->access_token);
 $tokenObject = refreshToken($tokenObject->refresh_token);
