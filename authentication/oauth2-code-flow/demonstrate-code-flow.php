@@ -32,6 +32,9 @@ Initiate a sign in using this link:<br /><a href="https://sim.logonvalidation.ne
 // Load the file with the app settings:
 require "server-config.php";
 
+/**
+ * Verify if no error was returned.
+ */
 function checkForErrors() {
     $error = filter_input(INPUT_GET, 'error', FILTER_SANITIZE_URL);
     $error_description = filter_input(INPUT_GET, 'error_description', FILTER_SANITIZE_URL);
@@ -42,6 +45,9 @@ function checkForErrors() {
     echo 'No error found in the redirect URL, so we can validate the CSRF token in the state parameter.<br />';
 }
 
+/**
+ * Verify the CSRF token.
+ */
 function checkState() {
     $received_state = filter_input(INPUT_GET, 'state', FILTER_SANITIZE_URL);
     $expected_state = '12345';  // This must be random for real applications!
@@ -54,11 +60,11 @@ function checkState() {
     echo 'CSRF token in the state parameter is available and expected, so the redirect is trusted and a token can be requested.<br />';
 }
 
-function configureCurl() {
-    $ch = curl_init();
-    if (defined('CURL_VERSION_HTTP2') && (curl_version()['features'] & CURL_VERSION_HTTP2) !== 0) {
-        curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_VERSION_HTTP2);  // CURL_HTTP_VERSION_2_0 (attempts HTTP 2)
-    }
+/**
+ * Initiate cURL.
+ */
+function configureCurl($url) {
+    $ch = curl_init($url);
     // https://www.php.net/manual/en/function.curl-setopt.php
     curl_setopt_array($ch, [
         CURLOPT_FAILONERROR    => true,  // Required for HTTP error codes to be reported via call to curl_error($ch)
@@ -68,18 +74,27 @@ function configureCurl() {
         CURLOPT_FOLLOWLOCATION => false,  // true to follow any "Location: " header that the server sends as part of the HTTP header.
         CURLOPT_RETURNTRANSFER => true  // true to return the transfer as a string of the return value of curl_exec() instead of outputting it directly.
     ]);
+    if (defined('CURL_VERSION_HTTP2') && (curl_version()['features'] & CURL_VERSION_HTTP2) !== 0) {
+        curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_VERSION_HTTP2);  // CURL_HTTP_VERSION_2_0 (attempts HTTP 2)
+    }
     return $ch;
 }
 
+/**
+ * Request a token ($postData specifies code, or refresh type).
+ */
 function getTokenResponse($postData) {
     global $configuration;
-    $ch = configureCurl();
+    $ch = configureCurl($configuration->tokenEndpoint);
     curl_setopt_array($ch, array(
-        CURLOPT_URL        => $configuration->tokenEndpoint,
         CURLOPT_POST       => true,
         CURLOPT_POSTFIELDS => $postData
     ));
     $response = curl_exec($ch);
+    // CURLOPT_FAILONERROR must be set for this.
+    if (curl_errno($ch)) {
+        die('Error: ' . curl_error($ch));
+    }
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
     // If you are looking here, probably something is wrong.
@@ -102,7 +117,7 @@ function getTokenResponse($postData) {
 }
 
 /**
- * Return the bearer token
+ * Return the bearer token.
  */
 function getToken() {
     global $configuration;
@@ -118,42 +133,32 @@ function getToken() {
     );
 }
 
+/**
+ * Return an API response, if any.
+ */
 function getApiResponse($accessToken, $method, $url, $data) {
     global $configuration;
-    $ch = configureCurl();
+    $ch = configureCurl($configuration->openApiBaseUrl . $url);
     $header = array(
-        'Authorization: Bearer ' . $accessToken
+        'Authorization: Bearer ' . $accessToken  // CURLOPT_XOAUTH2_BEARER is added in cURL 7.33.0. Available since PHP 7.0.7.
     );
-    switch ($method) {
-        case 'POST':
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-            $header[] = 'Content-Type: application/json; charset=utf-8';  // This is different than the token request content!
-            break;
-        case 'PUT':
-            //curl_setopt($ch, CURLOPT_PUT, true);
-            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-            $header[] = 'Content-Type: application/json; charset=utf-8';  // This is different than the token request content!
-            break;
-        case 'PATCH':
-            //curl_setopt($ch, CURLOPT_PUT, true);
-            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PATCH');
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-            $header[] = 'Content-Type: application/json; charset=utf-8';  // This is different than the token request content!
-            break;
+    if ($data != null) {
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));  // The full data to post in a HTTP "POST" operation. This parameter can either be passed as a urlencoded string like 'para1=val1&para2=val2&...' or as an array with the field name as key and field data as value.
+        $header[] = 'Content-Type: application/json; charset=utf-8';  // This is different than the token request content!
     }
-    curl_setopt($ch, CURLOPT_HEADER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, $header);
-    curl_setopt($ch, CURLOPT_URL, $configuration->openApiBaseUrl . $url);
+    curl_setopt_array($ch, array(
+        CURLOPT_CUSTOMREQUEST => $method,  // A custom request method to use instead of "GET" or "HEAD" when doing a HTTP request. This is useful for doing "DELETE" or other, more obscure HTTP requests. Valid values are things like "GET", "POST", "CONNECT" and so on; i.e.
+        CURLOPT_HEADER        => true,  // true to include the header in the output.
+        CURLOPT_HTTPHEADER    => $header  // An array of HTTP header fields to set, in the format array('Content-type: text/plain', 'Content-length: 100')
+    ));
     $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);  // As of cURL 7.10.8, this is a legacy alias of CURLINFO_RESPONSE_CODE
     $header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
     curl_close($ch);
     // Separate response header from body
     $headers = explode("\n", substr($response, 0, $header_size));
     $body = substr($response, $header_size);
-    echo 'Headers:<pre>';
+    echo 'Response headers (contain info about rate limits and the x-correlation):<pre>';
     foreach ($headers as $header)  {
         echo $header ."\n";
     }
@@ -175,21 +180,18 @@ function getApiResponse($accessToken, $method, $url, $data) {
     }
 }
 
+/**
+ * Request user data, usually the first request, to get the ClientKey.
+ */
 function getUserFromApi($accessToken) {
     echo 'Requesting user data from the API..<br />';
     $responseJson = getApiResponse($accessToken, 'GET', 'port/v1/users/me', null);
     echo 'Response from /users endpoint: <pre>' . json_encode($responseJson, JSON_PRETTY_PRINT) . '</pre><br />';
 }
 
-function precheckOrder($accessToken) {
-    $data = array(
-        'TradeLevel' => 'FullTradingAndChat'
-    );
-    echo 'Updating user..<br />';
-    $responseJson = getApiResponse($accessToken, 'POST', 'trade/v2/orders/precheck', $data);
-    echo 'Elevation of session requested.<br />';
-}
-
+/**
+ * (Try to) set the TradeLevel to FullTradingAndChat.
+ */
 function setTradeSession($accessToken) {
     $data = array(
         'TradeLevel' => 'FullTradingAndChat'
@@ -220,7 +222,6 @@ function refreshToken($refreshToken) {
 checkForErrors();
 checkState();
 $tokenObject = getToken();
-//precheckOrder($tokenObject->access_token);
 getUserFromApi($tokenObject->access_token);
 setTradeSession($tokenObject->access_token);
 $tokenObject = refreshToken($tokenObject->refresh_token);
