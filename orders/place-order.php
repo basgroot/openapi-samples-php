@@ -3,22 +3,61 @@
 $bearerToken = 'eyJhbGciOiJFUzI1NiIsIng1dCI6IkRFNDc0QUQ1Q0NGRUFFRTlDRThCRDQ3ODlFRTZDOTEyRjVCM0UzOTQifQ.eyJvYWEiOiI3Nzc3NSIsImlzcyI6Im9hIiwiYWlkIjoiMTA5IiwidWlkIjoiZzJXekR0UDZEVVR5TEN3aGphOXpodz09IiwiY2lkIjoiZzJXekR0UDZEVVR5TEN3aGphOXpodz09IiwiaXNhIjoiRmFsc2UiLCJ0aWQiOiIyMDAyIiwic2lkIjoiMjM5NzJjMGM3MGI4NDU2ZDk3YzM2MjAzYmZjYTQxNjgiLCJkZ2kiOiI4NCIsImV4cCI6IjE2NTgyMzQzNzYiLCJvYWwiOiIxRiIsImlpZCI6Ijc3NzEyMzc5OGE2NjRlOWM4ZDQ3NzIyZDE0ZmM2Njg4In0.ZS3BdEgBc1ugiDuzRdybWuRi7lWK-Dp62nwBUwdUe6i_mHYp62e8AL0D7hBKzzKjJMWFdr-Qr6UZ5z94vSQG3A';
 $openApiBaseUrl = 'https://gateway.saxobank.com/sim/openapi';
 
-function logRequest($method, $url, $data, $headers) {
+function logRequest($method, $url, $data, $httpCode, $responseHeaders) {
     $xCorrelationHeader = 'x-correlation: ';
     $xRateLimitAppDayRemainingHeader = 'x-ratelimit-appday-remaining: ';
-    foreach ($headers as $header)  {
+    foreach ($responseHeaders as $header)  {
         if (strpos($header, $xCorrelationHeader) !== false) {
             $xCorrelation = substr($header, strlen($xCorrelationHeader));
         } else if (strpos($header, $xRateLimitAppDayRemainingHeader) !== false) {
             $xRateLimitAppDayRemaining = substr($header, strlen($xRateLimitAppDayRemainingHeader));
         }
     }
-    $logLine = 'Request: ' . $method . ' ' . $url . ' response: ' . $headers[0] . ' x-correlation: ' . $xCorrelation . ' remaining requests today: ' . $xRateLimitAppDayRemaining;
-    if ($data != null) {
-        $logLine = $logLine . ' body: ' . json_encode($data);
+    $logLine = $httpCode . ' Request: ' . $method . ' ' . $url . ' x-correlation: ' . $xCorrelation;
+    if (isset($xRateLimitAppDayRemaining)) {
+        // On errors, this header is not sent to the client
+        $logLine .= ' remaining requests today: ' . $xRateLimitAppDayRemaining;
     }
-    error_log($logLine);  // Location of this log can be found with ini_get('error_log')
+    if ($data != null) {
+        $logLine .= ' body: ' . json_encode($data);
+    }
+    if (!isset($xRateLimitAppDayRemaining)) {
+      error_log($logLine);  // Location of this log can be found with ini_get('error_log')
+    }
     echo $logLine . "<br />";
+}
+
+function processErrorResponse($error) {
+    if (isset($error -> ErrorInfo)) {
+        $error = $error -> ErrorInfo;
+    }
+    $result = $error -> Message;
+    if (isset($error -> ModelState)) {
+        foreach ($error -> ModelState as $modelState)  {
+            $result .= '<br />' . $modelState[0];
+        }
+    }
+    /*
+    {
+        "ErrorCode": "IllegalInstrumentId",
+        "Message": "Instrument-ID is ongeldig"
+    }
+
+    {
+        "Message": "One or more properties of the request are invalid!",
+        "ModelState": {
+            "AssetType": [
+                "'Asset Type' must not be empty."
+            ],
+            "OrderDuration": [
+                "The specified condition was not met for 'Order Duration'."
+            ]
+        },
+        "ErrorCode": "InvalidModelState"
+    }
+    */
+    //echo '<pre>' . json_encode($error, JSON_PRETTY_PRINT) . '</pre>';
+    return $result;
 }
 
 function getApiResponse($accessToken, $method, $url, $data) {
@@ -36,7 +75,7 @@ function getApiResponse($accessToken, $method, $url, $data) {
     }
     // https://www.php.net/manual/en/function.curl-setopt.php
     curl_setopt_array($ch, array(
-        CURLOPT_FAILONERROR    => true,  // Required for HTTP error codes to be reported via call to curl_error($ch)
+        CURLOPT_FAILONERROR    => false,  // Required for HTTP error codes to be reported via call to curl_error($ch)
         CURLOPT_SSL_VERIFYPEER => true,  // false to stop cURL from verifying the peer's certificate.
         CURLOPT_CAINFO         => 'cacert-2022-04-26.pem',
         CURLOPT_SSL_VERIFYHOST => 2,  // 2 to verify that a Common Name field or a Subject Alternate Name field in the SSL peer certificate matches the provided hostname.
@@ -53,7 +92,7 @@ function getApiResponse($accessToken, $method, $url, $data) {
     // Separate response header from body
     $headers = explode("\n", substr($response, 0, $header_size));
     $body = substr($response, $header_size);
-    logRequest($method, $url, $data, $headers);
+    logRequest($method, $url, $data, $httpCode, $headers);
     if ($body == '') {
         if ($httpCode == 201 || $httpCode == 202) {
             // No response body
@@ -64,6 +103,9 @@ function getApiResponse($accessToken, $method, $url, $data) {
     }
     $responseJson = json_decode($body);
     if (json_last_error() == JSON_ERROR_NONE) {
+        if ((int) ($httpCode / 100) != 2) {
+            die('Error: ' . processErrorResponse($responseJson));
+        }
         return $responseJson;
     } else {
         // Something bad happened, no JSON in response.
