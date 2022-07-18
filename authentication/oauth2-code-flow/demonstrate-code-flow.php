@@ -67,7 +67,7 @@ function configureCurl($url) {
     $ch = curl_init($url);
     // https://www.php.net/manual/en/function.curl-setopt.php
     curl_setopt_array($ch, [
-        CURLOPT_FAILONERROR    => true,  // Required for HTTP error codes to be reported via call to curl_error($ch)
+        CURLOPT_FAILONERROR    => false,  // Required for HTTP error codes to be reported via call to curl_error($ch)
         CURLOPT_SSL_VERIFYPEER => true,  // false to stop cURL from verifying the peer's certificate.
         CURLOPT_CAINFO         => 'cacert-2022-04-26.pem',
         CURLOPT_SSL_VERIFYHOST => 2,  // 2 to verify that a Common Name field or a Subject Alternate Name field in the SSL peer certificate matches the provided hostname.
@@ -75,7 +75,7 @@ function configureCurl($url) {
         CURLOPT_RETURNTRANSFER => true  // true to return the transfer as a string of the return value of curl_exec() instead of outputting it directly.
     ]);
     if (defined('CURL_VERSION_HTTP2') && (curl_version()['features'] & CURL_VERSION_HTTP2) !== 0) {
-        curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_VERSION_HTTP2);  // CURL_HTTP_VERSION_2_0 (attempts HTTP 2)
+        curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_VERSION_HTTP2);  // CURL_HTTP_VERSION_2_0 (attempt to use HTTP 2, when available)
     }
     return $ch;
 }
@@ -91,10 +91,6 @@ function getTokenResponse($postData) {
         CURLOPT_POSTFIELDS => $postData
     ));
     $response = curl_exec($ch);
-    // CURLOPT_FAILONERROR must be set for this.
-    if (curl_errno($ch)) {
-        die('Error: ' . curl_error($ch));
-    }
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
     // If you are looking here, probably something is wrong.
@@ -102,7 +98,10 @@ function getTokenResponse($postData) {
     // Troubleshooting:
     //  You can follow these steps to see what is going wrong:
     //  1. Run PHP in development mode, with warnings displayed, by using the development.ini.
-    //  2. Do a var_dump of all variables and exit with "die();":
+    //  2. Do a var_dump of all variables and exit with "die();"
+    if ($httpCode != 201) {
+        die('Error ' . $httpCode . ' while getting a token.');
+    }
     $responseJson = json_decode($response);
     if (json_last_error() == JSON_ERROR_NONE) {
         if (property_exists($responseJson, 'error')) {
@@ -185,7 +184,7 @@ function getApiResponse($accessToken, $method, $url, $data) {
  */
 function getUserFromApi($accessToken) {
     echo 'Requesting user data from the API..<br />';
-    $responseJson = getApiResponse($accessToken, 'GET', 'port/v1/users/me', null);
+    $responseJson = getApiResponse($accessToken, 'GET', '/port/v1/users/me', null);
     echo 'Response from /users endpoint: <pre>' . json_encode($responseJson, JSON_PRETTY_PRINT) . '</pre><br />';
 }
 
@@ -197,7 +196,7 @@ function setTradeSession($accessToken) {
         'TradeLevel' => 'FullTradingAndChat'
     );
     echo 'Elevating Trade Session using PUT..<br />';
-    $responseJson = getApiResponse($accessToken, 'PUT', 'root/v1/sessions/capabilities', $data);
+    $responseJson = getApiResponse($accessToken, 'PUT', '/root/v1/sessions/capabilities', $data);
     echo 'Elevation of session requested.<br />';
 }
 
@@ -213,7 +212,7 @@ function refreshToken($refreshToken) {
         array(
             'client_id'     => $configuration->appKey,
             'client_secret' => $configuration->appSecret,
-            'grant_type' => 'refresh_token',
+            'grant_type'    => 'refresh_token',
             'refresh_token' => $refreshToken
         )
     );
