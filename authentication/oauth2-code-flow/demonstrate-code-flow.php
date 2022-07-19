@@ -163,8 +163,8 @@ function getApiResponse($accessToken, $method, $url, $data) {
     }
     echo '</pre>';
     if ($body == '') {
-        if ($httpCode == 201 || $httpCode == 202) {
-            // No response body
+        if ($httpCode >= 200 && $httpCode < 300) {
+            // No response body, but response code indicates success https://developer.mozilla.org/en-US/docs/Web/HTTP/Status#successful_responses
             return null;
         } else {
             die('Error with response HTTP ' . $httpCode);

@@ -28,12 +28,12 @@ function logRequest($method, $url, $data, $httpCode, $responseHeaders) {
 }
 
 function processErrorResponse($error) {
-    if (isset($error -> ErrorInfo)) {
-        $error = $error -> ErrorInfo;
+    if (isset($error->ErrorInfo)) {
+        $error = $error->ErrorInfo;
     }
-    $result = $error -> Message;
-    if (isset($error -> ModelState)) {
-        foreach ($error -> ModelState as $modelState)  {
+    $result = $error->Message;
+    if (isset($error->ModelState)) {
+        foreach ($error->ModelState as $modelState)  {
             $result .= '<br />' . $modelState[0];
         }
     }
@@ -56,7 +56,7 @@ function processErrorResponse($error) {
         "ErrorCode": "InvalidModelState"
     }
     */
-    //echo '<pre>' . json_encode($error, JSON_PRETTY_PRINT) . '</pre>';
+    echo '<pre>' . json_encode($error, JSON_PRETTY_PRINT) . '</pre>';
     return $result;
 }
 
@@ -94,8 +94,8 @@ function getApiResponse($accessToken, $method, $url, $data) {
     $body = substr($response, $header_size);
     logRequest($method, $url, $data, $httpCode, $headers);
     if ($body == '') {
-        if ($httpCode == 201 || $httpCode == 202) {
-            // No response body
+        if ($httpCode >= 200 && $httpCode < 300) {
+            // No response body, but response code indicates success https://developer.mozilla.org/en-US/docs/Web/HTTP/Status#successful_responses
             return null;
         } else {
             die('Error with response HTTP ' . $httpCode);
@@ -103,7 +103,7 @@ function getApiResponse($accessToken, $method, $url, $data) {
     }
     $responseJson = json_decode($body);
     if (json_last_error() == JSON_ERROR_NONE) {
-        if ((int) ($httpCode / 100) != 2) {
+        if ($httpCode >= 400) {
             die('Error: ' . processErrorResponse($responseJson));
         }
         return $responseJson;
@@ -116,14 +116,14 @@ function getApiResponse($accessToken, $method, $url, $data) {
 function getUicByIsin($isin, $assetTypes) {
     global $bearerToken;
     $instrumentsResponse = getApiResponse($bearerToken, 'GET', '/ref/v1/instruments?IncludeNonTradable=false&Keywords=' . urlencode($isin) . '&AssetTypes=' . $assetTypes, null);
-    if (count($instrumentsResponse -> Data) == 0) {
+    if (count($instrumentsResponse->Data) == 0) {
         die('Instrument not found. Isin: ' . $isin);
     }
-    $instrument = $instrumentsResponse -> Data[0];
-    if ($instrument -> SummaryType != 'Instrument') {
+    $instrument = $instrumentsResponse->Data[0];
+    if ($instrument->SummaryType != 'Instrument') {
         die('Option root found. See https://saxobank.github.io/openapi-samples-js/instruments/instrument-search/ on how to handle option series.');
     }
-    return $instrument -> Identifier;
+    return $instrument->Identifier;
 }
 
 function placeOrder($uic, $assetType) {
