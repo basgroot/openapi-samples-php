@@ -13,9 +13,9 @@ CURL is used for the samples. HTTP/2 when supported.
 ## Table of Contents
 
 1. Authentication
-   - [OAuth2 Code Flow](authentication/oauth2-code-flow)
-   - [OAuth2 Certificate Based Flow (only for certain Saxo partners)](authentication/oauth2-certificate-flow)
+   - [OAuth2 Code Flow](authentication/oauth2-code-flow/)
+   - [OAuth2 Certificate Based Flow (only for certain Saxo partners)](authentication/oauth2-certificate-flow/)
 2. API requests
-   - [Stock Orders](orders)
+   - [Stock Orders](orders/)
 
 Suggestions? Comments? Reach us via Github or [openapisupport@saxobank.com](mailto:openapisupport@saxobank.com).

@@ -1,8 +1,8 @@
 # Examples on retrieving and refreshing the authentication token
 
 Examples on
-   - [OAuth2 Code Flow](oauth2-code-flow)
-   - [OAuth2 Certificate Based Flow (only for certain Saxo partners)](oauth2-certificate-flow)
+   - [OAuth2 Code Flow](oauth2-code-flow/)
+   - [OAuth2 Certificate Based Flow (only for certain Saxo partners)](oauth2-certificate-flow/)
 
 The token is valid for 20 minutes.
 For implicit flow you receive no refresh token, but the other authentication flows return a refresh token as well.

@@ -1,4 +1,5 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
   <title>Basic PHP redirect example on the code flow</title>
 </head>
@@ -9,10 +10,6 @@ Initiate a sign in using this link:<br /><a href="https://sim.logonvalidation.ne
 <br /><br />
 
 <?php
-
-//ini_set('display_errors', 1);
-//ini_set('display_startup_errors', 1);
-//error_reporting(E_ALL);
 
 /*
  *  This sample demonstrates the following:
@@ -196,7 +193,7 @@ function setTradeSession($accessToken) {
         'TradeLevel' => 'FullTradingAndChat'
     );
     echo 'Elevating Trade Session using PUT..<br />';
-    $responseJson = getApiResponse($accessToken, 'PUT', '/root/v1/sessions/capabilities', $data);
+    getApiResponse($accessToken, 'PUT', '/root/v1/sessions/capabilities', $data);
     echo 'Elevation of session requested.<br />';
 }
 
