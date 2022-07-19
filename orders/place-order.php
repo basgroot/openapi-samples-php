@@ -1,4 +1,5 @@
 <?php
+header("Content-Type: text/plain");
 
 $bearerToken = 'eyJhbGciOiJFUzI1NiIsIng1dCI6IkRFNDc0QUQ1Q0NGRUFFRTlDRThCRDQ3ODlFRTZDOTEyRjVCM0UzOTQifQ.eyJvYWEiOiI3Nzc3NSIsImlzcyI6Im9hIiwiYWlkIjoiMTA5IiwidWlkIjoiZzJXekR0UDZEVVR5TEN3aGphOXpodz09IiwiY2lkIjoiZzJXekR0UDZEVVR5TEN3aGphOXpodz09IiwiaXNhIjoiRmFsc2UiLCJ0aWQiOiIyMDAyIiwic2lkIjoiMjM5NzJjMGM3MGI4NDU2ZDk3YzM2MjAzYmZjYTQxNjgiLCJkZ2kiOiI4NCIsImV4cCI6IjE2NTgyMzQzNzYiLCJvYWwiOiIxRiIsImlpZCI6Ijc3NzEyMzc5OGE2NjRlOWM4ZDQ3NzIyZDE0ZmM2Njg4In0.ZS3BdEgBc1ugiDuzRdybWuRi7lWK-Dp62nwBUwdUe6i_mHYp62e8AL0D7hBKzzKjJMWFdr-Qr6UZ5z94vSQG3A';
 $openApiBaseUrl = 'https://gateway.saxobank.com/sim/openapi';
@@ -24,7 +25,7 @@ function logRequest($method, $url, $data, $httpCode, $responseHeaders) {
     if (!isset($xRateLimitAppDayRemaining)) {
       error_log($logLine);  // Location of this log can be found with ini_get('error_log')
     }
-    echo $logLine . "<br />";
+    echo $logLine . "\n";
 }
 
 function processErrorResponse($error) {
@@ -34,7 +35,7 @@ function processErrorResponse($error) {
     $result = $error->Message;
     if (isset($error->ModelState)) {
         foreach ($error->ModelState as $modelState)  {
-            $result .= '<br />' . $modelState[0];
+            $result .= "\n" . $modelState[0];
         }
     }
     /*
@@ -56,7 +57,7 @@ function processErrorResponse($error) {
         "ErrorCode": "InvalidModelState"
     }
     */
-    echo '<pre>' . json_encode($error, JSON_PRETTY_PRINT) . '</pre>';
+    echo "\n" . json_encode($error, JSON_PRETTY_PRINT) . "\n";
     return $result;
 }
 
@@ -140,12 +141,12 @@ function placeOrder($uic, $assetType) {
         'OrderDuration' => array(
             'DurationType' => 'DayOrder'
         ),
-        'ExternalReference' => 'MyStockOrderCorrelationId',
+        'ExternalReference' => 'MyPhpOrderCorrelationId',
         'ManualOrder' => true
     );
     // Use the X-Request-ID header is you don't want two of the same orders being blocked.
     $ordersResponse = getApiResponse($bearerToken, 'POST', '/trade/v2/orders', $data);
-    echo '<pre>Orders response: ' . json_encode($ordersResponse, JSON_PRETTY_PRINT) . '</pre>';
+    echo "\nOrders response: " . json_encode($ordersResponse, JSON_PRETTY_PRINT) . "\n";
 }
 
 if ($bearerToken == '') {
