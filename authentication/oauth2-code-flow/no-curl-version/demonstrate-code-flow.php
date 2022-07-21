@@ -1,13 +1,3 @@
-<html>
-<head>
-  <title>Basic PHP redirect example on the code flow</title>
-</head>
-
-<body>
-Initiate a sign in using this link:<br /><a href="https://sim.logonvalidation.net/authorize?client_id=faf2acbb48754413a043676b9c2c2bd5&response_type=code&state=12345&redirect_uri=http%3A%2F%2Flocalhost%2Fopenapi-samples-php%2Fauthentication%2Foauth2-code-flow%2Fno-curl-version%2Fdemonstrate-code-flow.php">https://sim.logonvalidation.net/authorize?client_id=faf2acbb48754413a043676b9c2c2bd5&response_type=code&state=12345&redirect_uri=http%3A%2F%2Flocalhost%2Fopenapi-samples-php%2Fauthentication%2Foauth2-code-flow%2Fno-curl-version%2Fdemonstrate-code-flow.php</a><br />
-(make sure the state is random).
-<br /><br />
-
 <?php
 
 /*
@@ -28,6 +18,40 @@ Initiate a sign in using this link:<br /><a href="https://sim.logonvalidation.ne
 // Load the file with the app settings:
 require "server-config.php";
 
+/**
+ * Display the header of the HTML, including the link with CSRF token in the state.
+ */
+function printHeader() {
+    $redirectUri = 'http://localhost/openapi-samples-php/authentication/oauth2-code-flow/no-curl-version/demonstrate-code-flow.php';
+    if (isset($_SESSION['csrf'])) {
+        $csrfToken = $_SESSION['csrf'];  // A CSRF (Cross Site Request Forgery) Token is a secret, unique and unpredictable value an application generates in order to protect CSRF vulnerable resources.
+    } else {
+        $csrfToken = rand();
+        // Remember the CSRF token in the session, so it can be compared with the incoming state of a new redirect.
+        $_SESSION['csrf'] = $csrfToken;
+    }
+    // The CSRF token is part of the state and passed as base64 encoded string.
+    // https://auth0.com/docs/protocols/oauth2/oauth-state
+    $state = base64_encode(json_encode(array(
+        'data' => '[Something to remember]',
+        'csrf' => $csrfToken
+    )));
+    // The link differs per session. You can create a permalink using a redirect to this variable link.
+    $link = 'https://sim.logonvalidation.net/authorize?client_id=faf2acbb48754413a043676b9c2c2bd5&response_type=code&state=' . urlencode($state) . '&redirect_uri=' . urlencode($redirectUri);
+    echo '<!DOCTYPE html><html lang="en"><head><title>Basic PHP redirect example on the code flow</title></head><body>';
+    echo 'Initiate a sign in using this link:<br /><a href="' . $link . '">' . $link . '</a><br /><br /><br />';
+}
+
+/**
+ * Display the footer of the HTML.
+ */
+function printFooter() {
+    echo '</body></html>';
+}
+
+/**
+ * Verify if no error was returned.
+ */
 function checkForErrors() {
     $error = filter_input(INPUT_GET, 'error', FILTER_SANITIZE_URL);
     $error_description = filter_input(INPUT_GET, 'error_description', FILTER_SANITIZE_URL);
@@ -38,18 +62,34 @@ function checkForErrors() {
     echo 'No error found in the redirect URL, so we can validate the CSRF token in the state parameter.<br />';
 }
 
+/**
+ * Verify the CSRF token.
+ */
 function checkState() {
-    $received_state = filter_input(INPUT_GET, 'state', FILTER_SANITIZE_URL);
-    $expected_state = '12345';  // This must be random for real applications!
-    if (!$received_state) {
+    $receivedState = filter_input(INPUT_GET, 'state', FILTER_SANITIZE_URL);
+    $expectedCsrfToken = $_SESSION['csrf'];
+    if (!$receivedState) {
         die('Error: No state found - this is unexpected, so don\'t try to get the token.');
     }
-    if ($received_state != $expected_state) {
-        die('Error: The generated csrfToken (' . $expected_state . ') differs from the csrfToken in the response (' . $received_state . '). This can indicate a malicious request. Stop further processing and redirect back to the authentication.');
+    if (!$expectedCsrfToken) {
+        die('Error: No saved state found in the session - this is unexpected, so don\'t try to get the token.');
     }
-    echo 'CSRF token in the state parameter is available and expected, so the redirect is trusted and a token can be requested.<br />';
+    $receivedStateObjectString = base64_decode($receivedState);
+    $receivedStateObject = json_decode($receivedStateObjectString);
+    if (json_last_error() == JSON_ERROR_NONE) {
+        if ($receivedStateObject->csrf != $expectedCsrfToken) {
+            die('Error: The generated csrfToken (' . $expectedCsrfToken . ') differs from the csrfToken in the state (' . $receivedStateObject->csrf . '). This can indicate a malicious request (or was the state set in a different session?). Stop further processing and redirect back to the authentication.');
+        }
+        echo 'CSRF token in the state parameter is available and expected, so the redirect is trusted and a token can be requested.<br />';
+        echo 'Data submitted via the state: ' . $receivedStateObject->data . '<br />';
+    } else {
+        die('Error: Invalid state found - this is unexpected, so don\'t try to get the token.');
+    }
 }
 
+/**
+ * Create the context for the HTTP request, including SSL verification.
+ */
 function createRequestContext($method, $header, $data) {
     $http = array(
                 'method' => $method,
@@ -74,6 +114,9 @@ function createRequestContext($method, $header, $data) {
     );
 }
 
+/**
+ * Request date from Saxo.
+ */
 function doRequest($url, $context) {
     $result = @file_get_contents($url, false, $context);
     if (!$result) {
@@ -127,6 +170,9 @@ function getToken() {
     return $responseJson;
 }
 
+/**
+ * Request user data, usually the first request, to get the ClientKey.
+ */
 function getUserFromApi($accessToken) {
     global $configuration;
     $header = array(
@@ -138,6 +184,9 @@ function getUserFromApi($accessToken) {
     echo 'Response from /users endpoint: <pre>' . json_encode($responseJson, JSON_PRETTY_PRINT) . '</pre><br />';
 }
 
+/**
+ * (Try to) set the TradeLevel to FullTradingAndChat.
+ */
 function setTradeSession($accessToken) {
     global $configuration;
     $header = array(
@@ -175,14 +224,12 @@ function refreshToken($refreshToken) {
     return $responseJson;
 }
 
+session_start();  // The CSRF token is stored in the session.
+printHeader();
 checkForErrors();
 checkState();
 $tokenObject = getToken();
 getUserFromApi($tokenObject->access_token);
 setTradeSession($tokenObject->access_token);
 $tokenObject = refreshToken($tokenObject->refresh_token);
-
-?>
-
-</body>
-</html>
+printFooter();
