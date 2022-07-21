@@ -54,20 +54,29 @@ function generateRandomToken($keyspace, $length) {
 }
 
 /**
+ * Encode the verifier so it can be used in the URL.
+ */
+function base64url_encode($plainText) {
+    $base64 = base64_encode($plainText);
+    $base64 = trim($base64, "=");
+    $base64url = strtr($base64, '+/', '-_');
+    return ($base64url);
+}
+
+/**
  * Construct the URL for a new login.
  */
 function generateUrl($codeVerifier, $csrfToken) {
     global $configuration;
-    $redirectUri = 'http://localhost/openapi-samples-php/authentication/oauth2-pkce-flow/demonstrate-pkce-flow.php';
     // The CSRF token is part of the state and passed as base64 encoded string.
     // https://auth0.com/docs/protocols/oauth2/oauth-state
     $state = base64_encode(json_encode(array(
         'data' => '[Something to remember]',
         'csrf' => $csrfToken
     )));
-    $codeChallenge = strtr(base64_encode(pack('H*', hash('sha256', $codeVerifier))), '+/=', '._-');
+    $codeChallenge = base64url_encode(pack('H*', hash('sha256', $codeVerifier)));
     // The link differs per session. You can create a permalink using a redirect to this variable link.
-    return 'https://sim.logonvalidation.net/authorize?client_id=' . $configuration->appKey . '&response_type=code&state=' . urlencode($state) . '&redirect_uri=' . urlencode($redirectUri) . '&code_challenge_method=S256&code_challenge=' . $codeChallenge;
+    return 'https://sim.logonvalidation.net/authorize?client_id=' . $configuration->appKey . '&response_type=code&state=' . urlencode($state) . '&redirect_uri=' . urlencode($configuration->redirectUri) . '&code_challenge_method=S256&code_challenge=' . $codeChallenge;
 }
 
 /**
@@ -167,6 +176,7 @@ function getTokenResponse($postData) {
  * Return the bearer token.
  */
 function getToken() {
+    // Getting 401s? Test your challenge here: https://tonyxu-io.github.io/pkce-generator/
     global $configuration;
     $code = filter_input(INPUT_GET, 'code', FILTER_SANITIZE_URL);
     echo 'Requesting a token with the code from the URL..<br />';
@@ -174,6 +184,7 @@ function getToken() {
         array(
             'grant_type'    => 'authorization_code',
             'client_id'     => $configuration->appKey,
+            'redirect_uri'  => $configuration->redirectUri,
             'code'          => $code,
             'code_verifier' => $_SESSION['verifier']
         )
@@ -259,7 +270,6 @@ function refreshToken($refreshToken) {
     return getTokenResponse(
         array(
             'grant_type'    => 'refresh_token',
-            'client_id'     => $configuration->appKey,
             'refresh_token' => $refreshToken,
             'code_verifier' => $_SESSION['verifier']
         )
