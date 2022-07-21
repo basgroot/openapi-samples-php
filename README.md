@@ -13,7 +13,8 @@ CURL is used for the samples. HTTP/2 when supported.
 ## Table of Contents
 
 1. Authentication
-   - [OAuth2 Code Flow](authentication/oauth2-code-flow/)
+   - [OAuth2 Code Flow for websites](authentication/oauth2-code-flow/)
+   - [OAuth2 PKCE Flow for single page apps](authentication/oauth2-pkce-flow/)
    - [OAuth2 Certificate Based Flow (only for certain Saxo partners)](authentication/oauth2-certificate-flow/)
 2. API requests
    - [Stock Orders](orders/)
