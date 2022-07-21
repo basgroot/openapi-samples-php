@@ -10,8 +10,7 @@
  *  1. Copy this file to your webserver running PHP and make sure this file is listening to this URL:
  *     http://localhost/openapi-samples-php/authentication/oauth2-code-flow/demonstrate-code-flow.php
  *
- *  2. Navigate to this URL to authenticate and get data from the API (state must be random and known by PHP):
- *     https://sim.logonvalidation.net/authorize?client_id=faf2acbb48754413a043676b9c2c2bd5&response_type=code&state=12345&redirect_uri=http%3A%2F%2Flocalhost%2Fopenapi-samples-php%2Fauthentication%2Foauth2-code-flow%2Fdemonstrate-code-flow.php
+ *  2. Navigate to the URL displayed on top of the page, sign in and get data from the API.
  *
  */
 
@@ -21,25 +20,9 @@ require "server-config.php";
 /**
  * Display the header of the HTML, including the link with CSRF token in the state.
  */
-function printHeader() {
-    $redirectUri = 'http://localhost/openapi-samples-php/authentication/oauth2-code-flow/demonstrate-code-flow.php';
-    if (isset($_SESSION['csrf'])) {
-        $csrfToken = $_SESSION['csrf'];  // A CSRF (Cross Site Request Forgery) Token is a secret, unique and unpredictable value an application generates in order to protect CSRF vulnerable resources.
-    } else {
-        $csrfToken = rand();
-        // Remember the CSRF token in the session, so it can be compared with the incoming state of a new redirect.
-        $_SESSION['csrf'] = $csrfToken;
-    }
-    // The CSRF token is part of the state and passed as base64 encoded string.
-    // https://auth0.com/docs/protocols/oauth2/oauth-state
-    $state = base64_encode(json_encode(array(
-        'data' => '[Something to remember]',
-        'csrf' => $csrfToken
-    )));
-    // The link differs per session. You can create a permalink using a redirect to this variable link.
-    $link = 'https://sim.logonvalidation.net/authorize?client_id=faf2acbb48754413a043676b9c2c2bd5&response_type=code&state=' . urlencode($state) . '&redirect_uri=' . urlencode($redirectUri);
+function printHeader($url) {
     echo '<!DOCTYPE html><html lang="en"><head><title>Basic PHP redirect example on the code flow</title></head><body>';
-    echo 'Initiate a sign in using this link:<br /><a href="' . $link . '">' . $link . '</a><br /><br /><br />';
+    echo 'Initiate a sign in using this link:<br /><a href="' . $url . '">' . $url . '</a><br /><br /><br />';
 }
 
 /**
@@ -50,6 +33,35 @@ function printFooter() {
 }
 
 /**
+ * Generate a random string, using a cryptographically secure pseudorandom number generator (random_int)
+ * A CSRF (Cross Site Request Forgery) Token is a secret, unique and unpredictable value an application generates in order to protect CSRF vulnerable resources.
+ *
+ * For PHP 7, random_int is a PHP core function
+ * For PHP 5.x, depends on https://github.com/paragonie/random_compat
+ * 
+ * @return string
+ */
+function generateRandomToken($length) {
+    return bin2hex(random_bytes($length));
+}
+
+/**
+ * Construct the URL for a new login.
+ */
+function generateUrl($csrfToken) {
+    global $configuration;
+    $redirectUri = 'http://localhost/openapi-samples-php/authentication/oauth2-code-flow/demonstrate-code-flow.php';
+    // The CSRF token is part of the state and passed as base64 encoded string.
+    // https://auth0.com/docs/protocols/oauth2/oauth-state
+    $state = base64_encode(json_encode(array(
+        'data' => '[Something to remember]',
+        'csrf' => $csrfToken
+    )));
+    // The link differs per session. You can create a permalink using a redirect to this variable link.
+    return 'https://sim.logonvalidation.net/authorize?client_id=' . $configuration->appKey . '&response_type=code&state=' . urlencode($state) . '&redirect_uri=' . urlencode($redirectUri);
+}
+
+/**
  * Verify if no error was returned.
  */
 function checkForErrors() {
@@ -57,7 +69,7 @@ function checkForErrors() {
     $error_description = filter_input(INPUT_GET, 'error_description', FILTER_SANITIZE_URL);
     if ($error || $error_description) {
         // Something went wrong. Maybe the login failed?
-        die('Error: ' . $error . ' ' . $error_description);
+        throw new Exception('Error: ' . $error . ' ' . $error_description);
     }
     echo 'No error found in the redirect URL, so we can validate the CSRF token in the state parameter.<br />';
 }
@@ -69,21 +81,21 @@ function checkState() {
     $receivedState = filter_input(INPUT_GET, 'state', FILTER_SANITIZE_URL);
     $expectedCsrfToken = $_SESSION['csrf'];
     if (!$receivedState) {
-        die('Error: No state found - this is unexpected, so don\'t try to get the token.');
+        throw new Exception('Error: No state found - this is unexpected, so don\'t try to get the token.');
     }
     if (!$expectedCsrfToken) {
-        die('Error: No saved state found in the session - this is unexpected, so don\'t try to get the token.');
+        throw new Exception('Error: No saved state found in the session - this is unexpected, so don\'t try to get the token.');
     }
     $receivedStateObjectString = base64_decode($receivedState);
     $receivedStateObject = json_decode($receivedStateObjectString);
     if (json_last_error() == JSON_ERROR_NONE) {
         if ($receivedStateObject->csrf != $expectedCsrfToken) {
-            die('Error: The generated csrfToken (' . $expectedCsrfToken . ') differs from the csrfToken in the state (' . $receivedStateObject->csrf . '). This can indicate a malicious request (or was the state set in a different session?). Stop further processing and redirect back to the authentication.');
+            throw new Exception('Error: The generated csrfToken (' . $expectedCsrfToken . ') differs from the csrfToken in the state (' . $receivedStateObject->csrf . '). This can indicate a malicious request (or was the state set in a different session?). Stop further processing and redirect back to the authentication.');
         }
         echo 'CSRF token in the state parameter is available and expected, so the redirect is trusted and a token can be requested.<br />';
         echo 'Data submitted via the state: ' . $receivedStateObject->data . '<br />';
     } else {
-        die('Error: Invalid state found - this is unexpected, so don\'t try to get the token.');
+        throw new Exception('Error: Invalid state found - this is unexpected, so don\'t try to get the token.');
     }
 }
 
@@ -127,18 +139,18 @@ function getTokenResponse($postData) {
     //  1. Run PHP in development mode, with warnings displayed, by using the development.ini.
     //  2. Do a var_dump of all variables and exit with "die();"
     if ($httpCode != 201) {
-        die('Error ' . $httpCode . ' while getting a token.');
+        throw new Exception('Error ' . $httpCode . ' while getting a token.');
     }
     $responseJson = json_decode($response);
     if (json_last_error() == JSON_ERROR_NONE) {
         if (property_exists($responseJson, 'error')) {
-            die('Error: <pre>' . $responseJson . '</pre>');
+            throw new Exception('Error: <pre>' . $responseJson . '</pre>');
         }
         echo 'New token received: <pre>' . json_encode($responseJson, JSON_PRETTY_PRINT) . '</pre><br />';
         return $responseJson;
     } else {
         // Something bad happened, no JSON in response.
-        die('Error: ' . $response . ' (' . $configuration->tokenEndpoint . ')');
+        throw new Exception('Error: ' . $response . ' (' . $configuration->tokenEndpoint . ')');
     }
 }
 
@@ -194,7 +206,7 @@ function getApiResponse($accessToken, $method, $url, $data) {
             // No response body, but response code indicates success https://developer.mozilla.org/en-US/docs/Web/HTTP/Status#successful_responses
             return null;
         } else {
-            die('Error with response HTTP ' . $httpCode);
+            throw new Exception('Error with response HTTP ' . $httpCode);
         }
     }
     $responseJson = json_decode($body);
@@ -202,7 +214,7 @@ function getApiResponse($accessToken, $method, $url, $data) {
         return $responseJson;
     } else {
         // Something bad happened, no JSON in response.
-        die('Error: ' . $response . ' (' . $url . ')');
+        throw new Exception('Error: ' . $response . ' (' . $url . ')');
     }
 }
 
@@ -246,11 +258,20 @@ function refreshToken($refreshToken) {
 }
 
 session_start();  // The CSRF token is stored in the session.
-printHeader();
-checkForErrors();
-checkState();
-$tokenObject = getToken();
-getUserFromApi($tokenObject->access_token);
-setTradeSession($tokenObject->access_token);
-$tokenObject = refreshToken($tokenObject->refresh_token);
-printFooter();
+$newCsrfToken = generateRandomToken(24);
+$urlForNewLogin = generateUrl($newCsrfToken);
+printHeader($urlForNewLogin);
+try {
+    checkForErrors();
+    checkState();
+    $tokenObject = getToken();
+    getUserFromApi($tokenObject->access_token);
+    setTradeSession($tokenObject->access_token);
+    $tokenObject = refreshToken($tokenObject->refresh_token);
+    printFooter();
+} catch (Exception $ex) {
+    echo $ex;
+} finally {
+    // Store the new CSRF token in the session, so it can be compared with the incoming state of a new redirect.
+    $_SESSION['csrf'] = $newCsrfToken;
+}

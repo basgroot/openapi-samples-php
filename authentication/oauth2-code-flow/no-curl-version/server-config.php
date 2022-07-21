@@ -19,8 +19,8 @@
 
 // Configuration for Simulation (SIM):
 $configuration = json_decode('{
-    "appKey": "faf2acbb48754413a043676b9c2c2bd5",
-    "appSecret": "c074e19278f74700b21d66287a30c14e",
+    "appKey": "Your app key",
+    "appSecret": "Your app secret",
     "tokenEndpoint": "https://sim.logonvalidation.net/token",
     "openApiBaseUrl": "https://gateway.saxobank.com/sim/openapi/"
 }');
