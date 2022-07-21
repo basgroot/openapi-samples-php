@@ -2,6 +2,7 @@
 
 Examples on
    - [OAuth2 Code Flow](oauth2-code-flow/)
+   - [OAuth2 PKCE Flow](oauth2-pkce-flow/)
    - [OAuth2 Certificate Based Flow (only for certain Saxo partners)](oauth2-certificate-flow/)
 
 The token is valid for 20 minutes.
