@@ -270,8 +270,7 @@ function refreshToken($refreshToken) {
     return getTokenResponse(
         array(
             'grant_type'    => 'refresh_token',
-            'refresh_token' => $refreshToken,
-            'code_verifier' => $_SESSION['verifier']
+            'refresh_token' => $refreshToken
         )
     );
 }
