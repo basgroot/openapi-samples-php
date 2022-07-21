@@ -8,7 +8,7 @@
  *
  *  Steps:
  *  1. Copy this file to your webserver running PHP and make sure this file is listening to this URL:
- *     http://localhost/openapi-samples-php/authentication/oauth2-code-flow/demonstrate-code-flow.php
+ *     http://localhost/openapi-samples-php/authentication/oauth2-pkce-flow/demonstrate-pkce-flow.php
  *
  *  2. Navigate to the URL displayed on top of the page, sign in and get data from the API.
  *
@@ -21,7 +21,7 @@ require "server-config.php";
  * Display the header of the HTML, including the link with CSRF token in the state.
  */
 function printHeader($url) {
-    echo '<!DOCTYPE html><html lang="en"><head><title>Basic PHP redirect example on the code flow</title></head><body>';
+    echo '<!DOCTYPE html><html lang="en"><head><title>Basic PHP redirect example on the PKCE flow</title></head><body>';
     echo 'Initiate a sign in using this link:<br /><a href="' . $url . '">' . $url . '</a><br /><br /><br />';
 }
 
@@ -41,24 +41,33 @@ function printFooter() {
  * 
  * @return string
  */
-function generateRandomToken($length) {
-    return bin2hex(random_bytes($length));
+function generateRandomToken($keyspace, $length) {
+    if ($keyspace === '') {
+        return bin2hex(random_bytes($length));
+    }
+    $pieces = [];
+    $max = mb_strlen($keyspace, '8bit') - 1;
+    for ($i = 0; $i < $length; ++$i) {
+        $pieces []= $keyspace[random_int(0, $max)];
+    }
+    return implode('', $pieces);
 }
 
 /**
  * Construct the URL for a new login.
  */
-function generateUrl($csrfToken) {
+function generateUrl($codeVerifier, $csrfToken) {
     global $configuration;
-    $redirectUri = 'http://localhost/openapi-samples-php/authentication/oauth2-code-flow/demonstrate-code-flow.php';
+    $redirectUri = 'http://localhost/openapi-samples-php/authentication/oauth2-pkce-flow/demonstrate-pkce-flow.php';
     // The CSRF token is part of the state and passed as base64 encoded string.
     // https://auth0.com/docs/protocols/oauth2/oauth-state
     $state = base64_encode(json_encode(array(
         'data' => '[Something to remember]',
         'csrf' => $csrfToken
     )));
+    $codeChallenge = strtr(base64_encode(pack('H*', hash('sha256', $codeVerifier))), '+/=', '._-');
     // The link differs per session. You can create a permalink using a redirect to this variable link.
-    return 'https://sim.logonvalidation.net/authorize?client_id=' . $configuration->appKey . '&response_type=code&state=' . urlencode($state) . '&redirect_uri=' . urlencode($redirectUri);
+    return 'https://sim.logonvalidation.net/authorize?client_id=' . $configuration->appKey . '&response_type=code&state=' . urlencode($state) . '&redirect_uri=' . urlencode($redirectUri) . '&code_challenge_method=S256&code_challenge=' . $codeChallenge;
 }
 
 /**
@@ -165,8 +174,8 @@ function getToken() {
         array(
             'grant_type'    => 'authorization_code',
             'client_id'     => $configuration->appKey,
-            'client_secret' => $configuration->appSecret,
-            'code'          => $code
+            'code'          => $code,
+            'code_verifier' => $_SESSION['verifier']
         )
     );
 }
@@ -251,15 +260,18 @@ function refreshToken($refreshToken) {
         array(
             'grant_type'    => 'refresh_token',
             'client_id'     => $configuration->appKey,
-            'client_secret' => $configuration->appSecret,
-            'refresh_token' => $refreshToken
+            'refresh_token' => $refreshToken,
+            'code_verifier' => $_SESSION['verifier']
         )
     );
 }
 
-session_start();  // The CSRF token is stored in the session.
-$newCsrfToken = generateRandomToken(24);
-$urlForNewLogin = generateUrl($newCsrfToken);
+session_start();
+// High-entropy cryptographic random STRING using the unreserved characters [A-Z] / [a-z] / [0-9] / "-" / "." / "_" / "~",
+// with a minimum length of 43 characters and a maximum length of 128 characters.
+$newCodeVerifier = generateRandomToken('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~', 100);
+$newCsrfToken = generateRandomToken('', 24);
+$urlForNewLogin = generateUrl($newCodeVerifier, $newCsrfToken);
 printHeader($urlForNewLogin);
 try {
     checkForErrors();
@@ -274,4 +286,5 @@ try {
 } finally {
     // Store the new CSRF token in the session, so it can be compared with the incoming state of a new redirect.
     $_SESSION['csrf'] = $newCsrfToken;
+    $_SESSION['verifier'] = $newCodeVerifier;
 }

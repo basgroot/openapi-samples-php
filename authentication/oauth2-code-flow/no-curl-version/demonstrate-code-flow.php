@@ -21,7 +21,7 @@ require "server-config.php";
  * Display the header of the HTML, including the link with CSRF token in the state.
  */
 function printHeader($url) {
-    echo '<!DOCTYPE html><html lang="en"><head><title>Basic PHP redirect example on the code flow</title></head><body>';
+    echo '<!DOCTYPE html><html lang="en"><head><title>Basic PHP redirect example on the code flow (no cURL version)</title></head><body>';
     echo 'Initiate a sign in using this link:<br /><a href="' . $url . '">' . $url . '</a><br /><br /><br />';
 }
 
@@ -160,9 +160,9 @@ function getToken() {
         'Content-Type: application/x-www-form-urlencoded'
     );
     $data = array(
+        'grant_type' => 'authorization_code',
         'client_id' => $configuration->appKey,
         'client_secret' => $configuration->appSecret,
-        'grant_type' => 'authorization_code',
         'code' => $code
     );
     $context = createRequestContext('POST', $header, http_build_query($data));
@@ -224,9 +224,9 @@ function refreshToken($refreshToken) {
         'Content-Type: application/x-www-form-urlencoded'
     );
     $data = array(
+        'grant_type' => 'refresh_token',
         'client_id' => $configuration->appKey,
         'client_secret' => $configuration->appSecret,
-        'grant_type' => 'refresh_token',
         'refresh_token' => $refreshToken
     );
     $context = createRequestContext('POST', $header, http_build_query($data));
