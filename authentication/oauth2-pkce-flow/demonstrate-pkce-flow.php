@@ -19,6 +19,7 @@ require "server-config.php";
 
 /**
  * Display the header of the HTML, including the link with CSRF token in the state.
+ * @param string $url The URL to display in the header.
  */
 function printHeader($url) {
     echo '<!DOCTYPE html><html lang="en"><head><title>Basic PHP redirect example on the PKCE flow</title></head><body>';
@@ -38,7 +39,9 @@ function printFooter() {
  *
  * For PHP 7, random_int is a PHP core function
  * For PHP 5.x, depends on https://github.com/paragonie/random_compat
- * 
+ *
+ * @param string $keyspace A string of all possible characters to select from.
+ * @param int $length      How many characters do we want?
  * @return string
  */
 function generateRandomToken($keyspace, $length) {
@@ -55,16 +58,19 @@ function generateRandomToken($keyspace, $length) {
 
 /**
  * Encode the verifier so it can be used in the URL.
+ * @param string $text The plain text to encode.
+ * @return string
  */
-function base64url_encode($plainText) {
-    $base64 = base64_encode($plainText);
-    $base64 = trim($base64, "=");
-    $base64url = strtr($base64, '+/', '-_');
-    return ($base64url);
+function base64url_encode($text) {
+    $base64 = trim(base64_encode($text), "=");
+    return strtr($base64, '+/', '-_');
 }
 
 /**
  * Construct the URL for a new login.
+ * @param string $codeVerifier The verifier used to create the challenge.
+ * @param string $csrfToken    The token to verify the redirect origin.
+ * @return string
  */
 function generateUrl($codeVerifier, $csrfToken) {
     global $configuration;
@@ -119,6 +125,8 @@ function checkState() {
 
 /**
  * Initiate cURL.
+ * @param string $url The endpoint to call.
+ * @return object
  */
 function configureCurl($url) {
     $ch = curl_init($url);
@@ -139,6 +147,8 @@ function configureCurl($url) {
 
 /**
  * Request a token ($postData specifies code, or refresh type).
+ * @param array $postData The data body to sent.
+ * @return object
  */
 function getTokenResponse($postData) {
     global $configuration;
@@ -174,6 +184,7 @@ function getTokenResponse($postData) {
 
 /**
  * Return the bearer token.
+ * @return object
  */
 function getToken() {
     // Getting 401s? Test your challenge here: https://tonyxu-io.github.io/pkce-generator/
@@ -193,6 +204,11 @@ function getToken() {
 
 /**
  * Return an API response, if any.
+ * @param string $accessToken Bearer token.
+ * @param string $method      HTTP Method.
+ * @param string $url         The endpoint.
+ * @param object $data        Data to send via the body.
+ * @return object
  */
 function getApiResponse($accessToken, $method, $url, $data) {
     global $configuration;
@@ -240,6 +256,7 @@ function getApiResponse($accessToken, $method, $url, $data) {
 
 /**
  * Request user data, usually the first request, to get the ClientKey.
+ * @param string $accessToken Bearer token.
  */
 function getUserFromApi($accessToken) {
     echo 'Requesting user data from the API..<br />';
@@ -249,6 +266,7 @@ function getUserFromApi($accessToken) {
 
 /**
  * (Try to) set the TradeLevel to FullTradingAndChat.
+ * @param string $accessToken Bearer token.
  */
 function setTradeSession($accessToken) {
     $data = array(
@@ -262,10 +280,10 @@ function setTradeSession($accessToken) {
 /**
  * Return the bearer token
  * @param string $refreshToken This argument must contain the refresh_token.
+ * @return object
  */
 function refreshToken($refreshToken) {
     global $configuration;
-    $code = filter_input(INPUT_GET, 'code', FILTER_SANITIZE_URL);
     echo 'Requesting a new token with the refresh_token..<br />';
     return getTokenResponse(
         array(

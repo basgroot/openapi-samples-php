@@ -19,6 +19,7 @@ require "server-config.php";
 
 /**
  * Display the header of the HTML, including the link with CSRF token in the state.
+ * @param string $url The URL to display in the header.
  */
 function printHeader($url) {
     echo '<!DOCTYPE html><html lang="en"><head><title>Basic PHP redirect example on the code flow (no cURL version)</title></head><body>';
@@ -39,6 +40,7 @@ function printFooter() {
  * For PHP 7, random_int is a PHP core function
  * For PHP 5.x, depends on https://github.com/paragonie/random_compat
  * 
+ * @param int $length      How many characters do we want?
  * @return string
  */
 function generateRandomToken($length) {
@@ -47,10 +49,11 @@ function generateRandomToken($length) {
 
 /**
  * Construct the URL for a new login.
+ * @param string $csrfToken The token to verify the redirect origin.
+ * @return string
  */
 function generateUrl($csrfToken) {
     global $configuration;
-    $redirectUri = 'http://localhost/openapi-samples-php/authentication/oauth2-code-flow/no-curl-version/demonstrate-code-flow.php';
     // The CSRF token is part of the state and passed as base64 encoded string.
     // https://auth0.com/docs/protocols/oauth2/oauth-state
     $state = base64_encode(json_encode(array(
@@ -58,7 +61,7 @@ function generateUrl($csrfToken) {
         'csrf' => $csrfToken
     )));
     // The link differs per session. You can create a permalink using a redirect to this variable link.
-    return 'https://sim.logonvalidation.net/authorize?client_id=' . $configuration->appKey . '&response_type=code&state=' . urlencode($state) . '&redirect_uri=' . urlencode($redirectUri);
+    return $configuration->authEndpoint . '?client_id=' . $configuration->appKey . '&response_type=code&state=' . urlencode($state) . '&redirect_uri=' . urlencode($configuration->redirectUri);
 }
 
 /**
@@ -101,6 +104,10 @@ function checkState() {
 
 /**
  * Create the context for the HTTP request, including SSL verification.
+ * @param string $method HTTP Method.
+ * @param string $header The endpoint.
+ * @param object $data   Data to send via the body.
+ * @return object
  */
 function createRequestContext($method, $header, $data) {
     $http = array(
@@ -184,6 +191,7 @@ function getToken() {
 
 /**
  * Request user data, usually the first request, to get the ClientKey.
+ * @param string $accessToken Bearer token.
  */
 function getUserFromApi($accessToken) {
     global $configuration;
@@ -198,6 +206,7 @@ function getUserFromApi($accessToken) {
 
 /**
  * (Try to) set the TradeLevel to FullTradingAndChat.
+ * @param string $accessToken Bearer token.
  */
 function setTradeSession($accessToken) {
     global $configuration;
@@ -217,6 +226,7 @@ function setTradeSession($accessToken) {
 /**
  * Return the bearer token
  * @param string $refreshToken This argument must contain the refresh_token.
+ * @return object
  */
 function refreshToken($refreshToken) {
     global $configuration;
