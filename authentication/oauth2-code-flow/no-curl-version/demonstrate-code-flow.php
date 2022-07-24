@@ -15,7 +15,7 @@
  */
 
 // Load the file with the app settings:
-require "server-config.php";
+require __DIR__ . '/server-config.php';
 
 /**
  * Display the header of the HTML, including the link with CSRF token in the state.
@@ -122,10 +122,8 @@ function createRequestContext($method, $header, $data) {
         array(
             'http' => $http,
             'ssl' => array(
-                // This Mozilla CA certificate store is downloaded from:
-                // https://curl.haxx.se/docs/caextract.html
-                // This bundle was generated at Tue Apr 26 03:12:05 2022 GMT.
-                'cafile' => 'cacert-2022-04-26.pem',
+                // This Mozilla CA certificate store was generated at Tue Jul 19 03:12:06 2022 GMT and is downloaded from https://curl.haxx.se/docs/caextract.html
+                'cafile' => __DIR__ . '/cacert-2022-07-19.pem',
                 'verify_peer' => true,
                 'verify_peer_name' => true
             )

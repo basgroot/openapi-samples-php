@@ -21,6 +21,7 @@
 $configuration = json_decode('{
     "appKey": "Your app key",
     "redirectUri": "http://localhost/openapi-samples-php/authentication/oauth2-pkce-flow/demonstrate-pkce-flow.php",
+    "authEndpoint": "https://sim.logonvalidation.net/authorize",
     "tokenEndpoint": "https://sim.logonvalidation.net/token",
     "openApiBaseUrl": "https://gateway.saxobank.com/sim/openapi"
 }');
@@ -30,6 +31,7 @@ $configuration = json_decode('{
 $configuration = json_decode('{
     "appKey": "Your app key",
     "redirectUri": "http://localhost/openapi-samples-php/authentication/oauth2-pkce-flow/demonstrate-pkce-flow.php",
+    "authEndpoint": "https://live.logonvalidation.net/authorize",
     "tokenEndpoint": "https://live.logonvalidation.net/token",
     "openApiBaseUrl": "https://gateway.saxobank.com/openapi"
 }');

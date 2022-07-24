@@ -1,12 +1,23 @@
 <?php
 header("Content-Type: text/plain");
 
-$bearerToken = 'eyJhbGciOiJFUzI1NiIsIng1dCI6IkRFNDc0QUQ1Q0NGRUFFRTlDRThCRDQ3ODlFRTZDOTEyRjVCM0UzOTQifQ.eyJvYWEiOiI3Nzc3NSIsImlzcyI6Im9hIiwiYWlkIjoiMTA5IiwidWlkIjoiZzJXekR0UDZEVVR5TEN3aGphOXpodz09IiwiY2lkIjoiZzJXekR0UDZEVVR5TEN3aGphOXpodz09IiwiaXNhIjoiRmFsc2UiLCJ0aWQiOiIyMDAyIiwic2lkIjoiMjM5NzJjMGM3MGI4NDU2ZDk3YzM2MjAzYmZjYTQxNjgiLCJkZ2kiOiI4NCIsImV4cCI6IjE2NTgyMzQzNzYiLCJvYWwiOiIxRiIsImlpZCI6Ijc3NzEyMzc5OGE2NjRlOWM4ZDQ3NzIyZDE0ZmM2Njg4In0.ZS3BdEgBc1ugiDuzRdybWuRi7lWK-Dp62nwBUwdUe6i_mHYp62e8AL0D7hBKzzKjJMWFdr-Qr6UZ5z94vSQG3A';
+$accessToken = '';
 $openApiBaseUrl = 'https://gateway.saxobank.com/sim/openapi';
 
+/**
+ * Log request and response code/headers.
+ * @param string $method         HTTP Method.
+ * @param string $url            The endpoint.
+ * @param object $data           Data to send via the body.
+ * @param int $httpCode          HTTP response code.
+ * @param array $responseHeaders The response headers, useful for request limits and correlation.
+ * @return void
+ */
 function logRequest($method, $url, $data, $httpCode, $responseHeaders) {
     $xCorrelationHeader = 'x-correlation: ';
+    $xCorrelation = '-';
     $xRateLimitAppDayRemainingHeader = 'x-ratelimit-appday-remaining: ';
+    $xRateLimitAppDayRemaining = '';
     foreach ($responseHeaders as $header)  {
         if (strpos($header, $xCorrelationHeader) !== false) {
             $xCorrelation = substr($header, strlen($xCorrelationHeader));
@@ -15,19 +26,22 @@ function logRequest($method, $url, $data, $httpCode, $responseHeaders) {
         }
     }
     $logLine = $httpCode . ' Request: ' . $method . ' ' . $url . ' x-correlation: ' . $xCorrelation;
-    if (isset($xRateLimitAppDayRemaining)) {
+    if ($xRateLimitAppDayRemaining !== '') {
         // On errors, this header is not sent to the client
         $logLine .= ' remaining requests today: ' . $xRateLimitAppDayRemaining;
     }
     if ($data != null) {
         $logLine .= ' body: ' . json_encode($data);
     }
-    if (!isset($xRateLimitAppDayRemaining)) {
-      error_log($logLine);  // Location of this log can be found with ini_get('error_log')
-    }
+    error_log($logLine);  // Location of this log can be found with ini_get('error_log')
     echo $logLine . "\n";
 }
 
+/**
+ * Show a message for the user to indicate what happened.
+ * @param object $error HTTP Method.
+ * @return string
+ */
 function processErrorResponse($error) {
     if (isset($error->ErrorInfo)) {
         $error = $error->ErrorInfo;
@@ -61,8 +75,16 @@ function processErrorResponse($error) {
     return $result;
 }
 
-function getApiResponse($accessToken, $method, $url, $data) {
+/**
+ * Call an endpoint of the OpenAPI.
+ * @param string $method      HTTP Method.
+ * @param string $url         The endpoint.
+ * @param object $data        Data to send via the body.
+ * @return object
+ */
+function getApiResponse($method, $url, $data) {
     global $openApiBaseUrl;
+    global $accessToken;
     $ch = curl_init($openApiBaseUrl . $url);
     if (defined('CURL_VERSION_HTTP2') && (curl_version()['features'] & CURL_VERSION_HTTP2) !== 0) {
         curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_VERSION_HTTP2);  // CURL_HTTP_VERSION_2_0 (attempt to use HTTP 2, when available)
@@ -78,7 +100,7 @@ function getApiResponse($accessToken, $method, $url, $data) {
     curl_setopt_array($ch, array(
         CURLOPT_FAILONERROR    => false,  // Required for HTTP error codes to be reported via call to curl_error($ch)
         CURLOPT_SSL_VERIFYPEER => true,  // false to stop cURL from verifying the peer's certificate.
-        CURLOPT_CAINFO         => 'cacert-2022-04-26.pem',
+        CURLOPT_CAINFO         => __DIR__ . '/cacert-2022-07-19.pem',  // This Mozilla CA certificate store was generated at Tue Jul 19 03:12:06 2022 GMT and is downloaded from https://curl.haxx.se/docs/caextract.html
         CURLOPT_SSL_VERIFYHOST => 2,  // 2 to verify that a Common Name field or a Subject Alternate Name field in the SSL peer certificate matches the provided hostname.
         CURLOPT_FOLLOWLOCATION => false,  // true to follow any "Location: " header that the server sends as part of the HTTP header.
         CURLOPT_RETURNTRANSFER => true,  // true to return the transfer as a string of the return value of curl_exec() instead of outputting it directly.
@@ -114,9 +136,14 @@ function getApiResponse($accessToken, $method, $url, $data) {
     }
 }
 
+/**
+ * Get the Uic of an instrument by its ISIN.
+ * @param string $isin The ISIN.
+ * @param string $assetTypes One or more asset types, separated by comma.
+ * @return string
+ */
 function getUicByIsin($isin, $assetTypes) {
-    global $bearerToken;
-    $instrumentsResponse = getApiResponse($bearerToken, 'GET', '/ref/v1/instruments?IncludeNonTradable=false&Keywords=' . urlencode($isin) . '&AssetTypes=' . $assetTypes, null);
+    $instrumentsResponse = getApiResponse('GET', '/ref/v1/instruments?IncludeNonTradable=false&Keywords=' . urlencode($isin) . '&AssetTypes=' . urlencode($assetTypes), null);
     if (count($instrumentsResponse->Data) == 0) {
         die('Instrument not found. Isin: ' . $isin);
     }
@@ -127,8 +154,13 @@ function getUicByIsin($isin, $assetTypes) {
     return $instrument->Identifier;
 }
 
+/**
+ * Place the actual order.
+ * @param string $uic       The Saxobank id of the instrument.
+ * @param string $assetType The instrument type.
+ * @return string
+ */
 function placeOrder($uic, $assetType) {
-    global $bearerToken;
     global $accountKey;
     // This order object is borrowed from the example at https://saxobank.github.io/openapi-samples-js/orders/stocks/
     $data = array(
@@ -145,15 +177,14 @@ function placeOrder($uic, $assetType) {
         'ManualOrder' => true
     );
     // Use the X-Request-ID header is you don't want two of the same orders being blocked.
-    $ordersResponse = getApiResponse($bearerToken, 'POST', '/trade/v2/orders', $data);
+    $ordersResponse = getApiResponse('POST', '/trade/v2/orders', $data);
     echo "\nOrders response: " . json_encode($ordersResponse, JSON_PRETTY_PRINT) . "\n";
 }
 
-if ($bearerToken == '') {
+if ($accessToken === '') {
     // Only for demonstration purposes:
-    die('You must add a bearer token first. Get your 24-hour token here https://www.developer.saxo/openapi/token/current, or create an all and request one.');
+    die('You must add an access (bearer) token first. Get your 24-hour token here https://www.developer.saxo/openapi/token/current, or create an app and request one.');
 }
-
 $uic = getUicByIsin('US5949181045', 'Stock');  // This is the ISIN of Microsoft Corp
 // Ideally there is a precheck first, and a check on the order conditions to see in advance if the order can go through..
 placeOrder($uic, 'Stock');

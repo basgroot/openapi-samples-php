@@ -25,17 +25,17 @@ $apiUrl = 'https://gateway.saxobank.com/sim/openapi';  // On production, this is
  * Make sure this file cannot be downloaded via internet!
  * Store it in a folder not accessible from outside, or use the PHP extension so it cannot be downloaded.
  */
-$privateKeyFile = "private-key-with-cert.pem.php";
+$privateKeyFile = 'private-key-with-cert.pem.php';
 
 // Set your return content type
 header('Content-Type: text/plain; charset=utf-8');
 //header('Content-Type: application/json; charset=utf-8');
 
-require_once('JWT.php');
+require __DIR__ . '/JWT.php';
 
 /**
  * Create and sign the assertion.
- * @return {string} The signed JWT.
+ * @return string The signed JWT.
  */
 function createJwtAssertion() {
     global $authProviderUrl;
@@ -70,8 +70,8 @@ function createJwtAssertion() {
 
 /**
  * Request a token using the JWT.
- * @param {string} assertion The signed JWT.
- * @return {Object} The token object, or false when failed.
+ * @param string $assertion The signed JWT.
+ * @return object|bool The token object, or false when failed.
  */
 function requestToken($assertion) {
     // If you run into a 401 NotAuthenticated, this might be caused by not accepting the terms and conditions.
@@ -96,10 +96,8 @@ function requestToken($assertion) {
             'ignore_errors' => false
         ],
         'ssl' => [
-            // This Mozilla CA certificate store is downloaded from:
-            // https://curl.haxx.se/docs/caextract.html
-            // This bundle was generated at Tue Apr 26 03:12:05 2022 GMT.
-            'cafile' => 'cacert-2022-04-26.pem',
+            // This Mozilla CA certificate store was generated at Tue Jul 19 03:12:06 2022 GMT and is downloaded from https://curl.haxx.se/docs/caextract.html
+            'cafile' => __DIR__ . '/cacert-2022-07-19.pem',
             'verify_peer' => true,
             'verify_peer_name' => true
         ]
@@ -133,8 +131,8 @@ function requestToken($assertion) {
  * Well, if you generate a new token, you create a new session and the streaming session must be recreated.
  * And if you refresh the token, the session is extended, keeping up the streaming session.
  * So it is recommended to refresh the token.
- * @param {string} refreshToken The refresh token.
- * @return {Object} The refreshed token, or false when failed.
+ * @param string $refreshToken The refresh token.
+ * @return object The refreshed token, or false when failed.
  */
 function requestTokenRefresh($refreshToken) {
     global $authProviderUrl;
@@ -155,10 +153,8 @@ function requestTokenRefresh($refreshToken) {
             'ignore_errors' => false
         ],
         'ssl' => [
-            // This Mozilla CA certificate store is downloaded from:
-            // https://curl.haxx.se/docs/caextract.html
-            // This bundle was generated at Tue Apr 26 03:12:05 2022 GMT.
-            'cafile' => 'cacert-2022-04-26.pem',
+            // This Mozilla CA certificate store was generated at Tue Jul 19 03:12:06 2022 GMT and is downloaded from https://curl.haxx.se/docs/caextract.html
+            'cafile' => __DIR__ . '/cacert-2022-07-19.pem',
             'verify_peer' => true,
             'verify_peer_name' => true
         ]
@@ -188,8 +184,8 @@ function requestTokenRefresh($refreshToken) {
 
 /**
  * Call an API endpoint to demonstrate the token is valid.
- * @param {string} token The Bearer token.
- * @return {void}
+ * @param string $token The Bearer token.
+ * @return void
  */
 function requestApiData($token) {
     global $apiUrl;
@@ -200,10 +196,8 @@ function requestApiData($token) {
             'ignore_errors' => false
         ],
         'ssl' => [
-            // This Mozilla CA certificate store is downloaded from:
-            // https://curl.haxx.se/docs/caextract.html
-            // This bundle was generated at Tue Apr 26 03:12:05 2022 GMT.
-            'cafile' => 'cacert-2022-04-26.pem',
+            // This Mozilla CA certificate store was generated at Tue Jul 19 03:12:06 2022 GMT and is downloaded from https://curl.haxx.se/docs/caextract.html
+            'cafile' => __DIR__ . '/cacert-2022-07-19.pem',
             'verify_peer' => true,
             'verify_peer_name' => true
         ]

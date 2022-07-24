@@ -15,7 +15,7 @@
  */
 
 // Load the file with the app settings:
-require "server-config.php";
+require __DIR__ . '/server-config.php';
 
 /**
  * Display the header of the HTML, including the link with CSRF token in the state.
@@ -82,7 +82,7 @@ function generateUrl($codeVerifier, $csrfToken) {
     )));
     $codeChallenge = base64url_encode(pack('H*', hash('sha256', $codeVerifier)));
     // The link differs per session. You can create a permalink using a redirect to this variable link.
-    return 'https://sim.logonvalidation.net/authorize?client_id=' . $configuration->appKey . '&response_type=code&state=' . urlencode($state) . '&redirect_uri=' . urlencode($configuration->redirectUri) . '&code_challenge_method=S256&code_challenge=' . $codeChallenge;
+    return $configuration->authEndpoint . '?client_id=' . $configuration->appKey . '&response_type=code&state=' . urlencode($state) . '&redirect_uri=' . urlencode($configuration->redirectUri) . '&code_challenge_method=S256&code_challenge=' . $codeChallenge;
 }
 
 /**
@@ -134,7 +134,7 @@ function configureCurl($url) {
     curl_setopt_array($ch, [
         CURLOPT_FAILONERROR    => false,  // Required for HTTP error codes to be reported via call to curl_error($ch)
         CURLOPT_SSL_VERIFYPEER => true,  // false to stop cURL from verifying the peer's certificate.
-        CURLOPT_CAINFO         => 'cacert-2022-04-26.pem',
+        CURLOPT_CAINFO         => __DIR__ . '/cacert-2022-07-19.pem',  // This Mozilla CA certificate store was generated at Tue Jul 19 03:12:06 2022 GMT and is downloaded from https://curl.haxx.se/docs/caextract.html
         CURLOPT_SSL_VERIFYHOST => 2,  // 2 to verify that a Common Name field or a Subject Alternate Name field in the SSL peer certificate matches the provided hostname.
         CURLOPT_FOLLOWLOCATION => false,  // true to follow any "Location: " header that the server sends as part of the HTTP header.
         CURLOPT_RETURNTRANSFER => true  // true to return the transfer as a string of the return value of curl_exec() instead of outputting it directly.
@@ -237,7 +237,7 @@ function getApiResponse($accessToken, $method, $url, $data) {
         echo $header ."\n";
     }
     echo '</pre>';
-    if ($body == '') {
+    if ($body === '') {
         if ($httpCode >= 200 && $httpCode < 300) {
             // No response body, but response code indicates success https://developer.mozilla.org/en-US/docs/Web/HTTP/Status#successful_responses
             return null;
