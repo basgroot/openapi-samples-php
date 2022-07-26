@@ -71,8 +71,14 @@ function processErrorResponse($error) {
         "ErrorCode": "InvalidModelState"
     }
     */
-    echo "\n" . json_encode($error, JSON_PRETTY_PRINT) . "\n";
     return $result;
+}
+
+function logErrorAndDie($error) {
+    error_log($error);  // Location of this log can be found with ini_get('error_log')
+    // This function should die after an unsuccessful request. But for this demo, it doesn't.
+    //die($error);
+    echo $error . PHP_EOL;
 }
 
 /**
@@ -110,6 +116,10 @@ function getApiResponse($method, $url, $data) {
         CURLOPT_HTTPHEADER     => $header  // An array of HTTP header fields to set, in the format array('Content-type: text/plain', 'Content-length: 100')
     ));
     $response = curl_exec($ch);
+    if ($response === false) {
+        // Something bad happened (couldn't reach the server). No internet conection?
+        return logErrorAndDie('Error connecting to ' . $method . ' ' . $url . ': ' . curl_error($ch));
+    }
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);  // As of cURL 7.10.8, this is a legacy alias of CURLINFO_RESPONSE_CODE
     $header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
     curl_close($ch);
@@ -122,70 +132,57 @@ function getApiResponse($method, $url, $data) {
             // No response body, but response code indicates success https://developer.mozilla.org/en-US/docs/Web/HTTP/Status#successful_responses
             return null;
         } else {
-            die('Error with response HTTP ' . $httpCode);
+            // Don't quit immediately. Contruct a valid error and continue.
+            $body = '{"ErrorCode":"' . $httpCode . '","Message":"' . trim($headers[0]) . '"}';
         }
     }
     $responseJson = json_decode($body);
     if (json_last_error() == JSON_ERROR_NONE) {
         if ($httpCode >= 400) {
-            die('Error: ' . processErrorResponse($responseJson));
+            return logErrorAndDie('Error: ' . processErrorResponse($responseJson));
         }
         return $responseJson;
     } else {
         // Something bad happened, no JSON in response.
-        die('Error: ' . $response . ' (' . $url . ')');
+        return logErrorAndDie('Error parsing JSON response of request ' . $method . ' ' . $url . ': ' . $body);
     }
 }
 
 /**
- * Get the Uic of an instrument by its ISIN.
- * @param string $isin The ISIN.
- * @param string $assetTypes One or more asset types, separated by comma.
- * @return string
+ * Trigger 404 Not Found.
  */
-function getUicByIsin($isin, $assetTypes) {
-    $instrumentsResponse = getApiResponse('GET', '/ref/v1/instruments?IncludeNonTradable=false&Keywords=' . urlencode($isin) . '&AssetTypes=' . urlencode($assetTypes), null);
-    if (count($instrumentsResponse->Data) == 0) {
-        die('Instrument not found. Isin: ' . $isin);
-    }
-    $instrument = $instrumentsResponse->Data[0];
-    if ($instrument->SummaryType != 'Instrument') {
-        die('Option root found. See https://saxobank.github.io/openapi-samples-js/instruments/instrument-search/ on how to handle option series.');
-    }
-    return $instrument->Identifier;
+function trigger404NotFound() {
+    echo PHP_EOL . 'Trigger 404 NotFound:' . PHP_EOL;
+    // The regular 404 ('GET', '/ref/v1/invalid', null) returns HTML - this shouln't be handled in the API.
+    getApiResponse('GET', '/ref/v1/instruments/details/123456789/Stock', null);
 }
 
 /**
- * Place the actual order.
- * @param string $uic       The Saxobank id of the instrument.
- * @param string $assetType The instrument type.
- * @return string
+ * Trigger 400 Bad Request.
  */
-function placeOrder($uic, $assetType) {
-    global $accountKey;
-    // This order object is borrowed from the example at https://saxobank.github.io/openapi-samples-js/orders/stocks/
-    $data = array(
-        //'AccountKey' => $accountKey,  // By not specifying this, the default account for this AssetType will be used.
-        'BuySell' => 'Buy',
-        'Amount' => 100,
-        'Uic' => $uic,  // Instruments can be found using GET /ref/v1/instruments (https://saxobank.github.io/openapi-samples-js/instruments/instrument-search/)
-        'AssetType' => $assetType,
-        'OrderType' => 'Market',
-        'OrderDuration' => array(
-            'DurationType' => 'DayOrder'
-        ),
-        'ExternalReference' => 'MyPhpOrderCorrelationId',
-        'ManualOrder' => true
-    );
-    // Use the X-Request-ID header is you don't want two of the same orders being blocked.
-    $ordersResponse = getApiResponse('POST', '/trade/v2/orders', $data);
-    echo "\nOrders response: " . json_encode($ordersResponse, JSON_PRETTY_PRINT) . "\n";
+function trigger400BadRequest() {
+    echo PHP_EOL . 'Trigger 400 BadRequest:' . PHP_EOL;
+    getApiResponse('GET', '/ref/v1/instruments?SectorId=Vastgoed&IncludeNonTradable=Ja&CanParticipateInMultiLegOrder=Mag+wel&Uics=N.V.T.&AssetTypes=Aandelen&Tags=Vastgoed&AccountKey=IBAN', null);
+}
+
+/**
+ * Trigger 429 TooManyRequests.
+ */
+function trigger429TooManyRequests() {
+    $result = null;
+    $requestCount = 0;
+    echo PHP_EOL . 'Trigger 429 TooManyRequests:' . PHP_EOL;
+    do {
+        $requestCount += 1;
+        echo 'Requesting AEX ref data (request ' . $requestCount. ')..' . PHP_EOL;
+        $result = getApiResponse('GET', '/ref/v1/instruments?$top=1&$skip=0&Keywords=aex', null);
+    } while ($result !== null);
 }
 
 if ($accessToken === '') {
     // Only for demonstration purposes:
     die('You must add an access (bearer) token first. Get your 24-hour token here https://www.developer.saxo/openapi/token/current, or create an app and request one.');
 }
-$uic = getUicByIsin('US5949181045', 'Stock');  // This is the ISIN of Microsoft Corp
-// Ideally there is a precheck first, and a check on the order conditions to see in advance if the order can go through..
-placeOrder($uic, 'Stock');
+trigger404NotFound();
+trigger400BadRequest();
+trigger429TooManyRequests();
