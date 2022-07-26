@@ -10,6 +10,8 @@ Samples run against Saxo's simulation environment and require an **access token*
 
 CURL is used for the samples. HTTP/2 when supported.
 
+Minimal PHP 7 is recommended.
+
 ## Table of Contents
 
 1. Authentication
@@ -18,5 +20,8 @@ CURL is used for the samples. HTTP/2 when supported.
    - [OAuth2 Certificate Based Flow (only for certain Saxo partners)](authentication/oauth2-certificate-flow/)
 2. API requests
    - [Stock Orders](orders/)
+3. Basics
+   - [Token Info (get Lifetime, UserKey, ClientKey)](token-info/)
+   - [Error Handling](error-handling/)
 
 Suggestions? Comments? Reach us via Github or [openapisupport@saxobank.com](mailto:openapisupport@saxobank.com).

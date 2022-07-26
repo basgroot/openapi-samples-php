@@ -140,6 +140,10 @@ function getTokenResponse($postData) {
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
+    if ($response === false) {
+        // Something bad happened (couldn't reach the server). No internet conection?
+        logErrorAndDie('Error connecting to ' . $method . ' ' . $url . ': ' . curl_error($ch));
+    }
     // If you are looking here, probably something is wrong.
     // Is PHP properly installed (including OpenSSL extension)?
     // Troubleshooting:
@@ -147,18 +151,18 @@ function getTokenResponse($postData) {
     //  1. Run PHP in development mode, with warnings displayed, by using the development.ini.
     //  2. Do a var_dump of all variables and exit with "die();"
     if ($httpCode != 201) {
-        throw new Exception('Error ' . $httpCode . ' while getting a token.');
+        logErrorAndDie('Error ' . $httpCode . ' while getting a token.');
     }
     $responseJson = json_decode($response);
     if (json_last_error() == JSON_ERROR_NONE) {
         if (property_exists($responseJson, 'error')) {
-            throw new Exception('Error: <pre>' . $responseJson . '</pre>');
+            logErrorAndDie('Error: <pre>' . $responseJson . '</pre>');
         }
         echo 'New token received: <pre>' . json_encode($responseJson, JSON_PRETTY_PRINT) . '</pre><br />';
         return $responseJson;
     } else {
         // Something bad happened, no JSON in response.
-        throw new Exception('Error: ' . $response . ' (' . $configuration->tokenEndpoint . ')');
+        logErrorAndDie('Error: ' . $response . ' (' . $configuration->tokenEndpoint . ')');
     }
 }
 
@@ -178,6 +182,49 @@ function getToken() {
             'code'          => $code
         )
     );
+}
+
+/**
+ * Log request and response code/headers to track issues with calling the API.
+ * @param string $method         HTTP Method.
+ * @param string $url            The endpoint.
+ * @param object $data           Data to send via the body.
+ * @param int $httpCode          HTTP response code.
+ * @param array $responseHeaders The response headers, useful for request limits and correlation.
+ * @return void
+ */
+function logRequest($method, $url, $data, $httpCode, $responseHeaders) {
+    $xCorrelationHeader = 'x-correlation: ';
+    $xCorrelation = '-';
+    $xRateLimitAppDayRemainingHeader = 'x-ratelimit-appday-remaining: ';
+    $xRateLimitAppDayRemaining = '';
+    foreach ($responseHeaders as $header)  {
+        if (strpos($header, $xCorrelationHeader) !== false) {
+            $xCorrelation = substr($header, strlen($xCorrelationHeader));
+        } else if (strpos($header, $xRateLimitAppDayRemainingHeader) !== false) {
+            $xRateLimitAppDayRemaining = substr($header, strlen($xRateLimitAppDayRemainingHeader));
+        }
+    }
+    $logLine = $httpCode . ' Request: ' . $method . ' ' . $url . ' x-correlation: ' . $xCorrelation;
+    if ($xRateLimitAppDayRemaining !== '') {
+        // On errors, this header is not sent to the client
+        $logLine .= ' remaining requests today: ' . $xRateLimitAppDayRemaining;
+    }
+    if ($data != null) {
+        $logLine .= ' body: ' . json_encode($data);
+    }
+    error_log($logLine);  // Location of this log can be found with ini_get('error_log')
+    echo $logLine . "\n";
+}
+
+/**
+ * Log an issue to PHP error log and stop further processing.
+ * @param string $error The error to be logged.
+ * @return void
+ */
+function logErrorAndDie($error) {
+    error_log($error);  // Location of this log can be found with ini_get('error_log')
+    throw new Exception($error);
 }
 
 /**
@@ -201,34 +248,39 @@ function getApiResponse($accessToken, $method, $url, $data) {
     curl_setopt_array($ch, array(
         CURLOPT_CUSTOMREQUEST => $method,  // A custom request method to use instead of "GET" or "HEAD" when doing a HTTP request. This is useful for doing "DELETE" or other, more obscure HTTP requests. Valid values are things like "GET", "POST", "CONNECT" and so on; i.e.
         CURLOPT_HEADER        => true,  // true to include the header in the output.
+        CURLOPT_ENCODING      => 'gzip',  // This enables decoding of the response. Supported encodings are "identity", "deflate", and "gzip". If an empty string is set, a header containing all supported encoding types is sent.
         CURLOPT_HTTPHEADER    => $header  // An array of HTTP header fields to set, in the format array('Content-type: text/plain', 'Content-length: 100')
     ));
     $response = curl_exec($ch);
+    if ($response === false) {
+        // Something bad happened (couldn't reach the server). No internet conection?
+        logErrorAndDie('Error connecting to ' . $method . ' ' . $url . ': ' . curl_error($ch));
+    }
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);  // As of cURL 7.10.8, this is a legacy alias of CURLINFO_RESPONSE_CODE
     $header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
     curl_close($ch);
     // Separate response header from body
     $headers = explode("\n", substr($response, 0, $header_size));
     $body = substr($response, $header_size);
-    echo 'Response headers (contain info about rate limits and the x-correlation):<pre>';
-    foreach ($headers as $header)  {
-        echo $header ."\n";
-    }
-    echo '</pre>';
+    logRequest($method, $url, $data, $httpCode, $headers);
     if ($body === '') {
         if ($httpCode >= 200 && $httpCode < 300) {
             // No response body, but response code indicates success https://developer.mozilla.org/en-US/docs/Web/HTTP/Status#successful_responses
             return null;
         } else {
-            throw new Exception('Error with response HTTP ' . $httpCode);
+            // Don't quit immediately. Contruct a valid error and continue.
+            $body = '{"ErrorCode":"' . $httpCode . '","Message":"' . trim($headers[0]) . '"}';
         }
     }
     $responseJson = json_decode($body);
     if (json_last_error() == JSON_ERROR_NONE) {
+        if ($httpCode >= 400) {
+            logErrorAndDie('Error: ' . processErrorResponse($responseJson));
+        }
         return $responseJson;
     } else {
         // Something bad happened, no JSON in response.
-        throw new Exception('Error: ' . $response . ' (' . $url . ')');
+        logErrorAndDie('Error parsing JSON response of request ' . $method . ' ' . $url . ': ' . $body);
     }
 }
 

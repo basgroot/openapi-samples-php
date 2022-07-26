@@ -5,7 +5,7 @@ $accessToken = '';
 $openApiBaseUrl = 'https://gateway.saxobank.com/sim/openapi';
 
 /**
- * Log request and response code/headers.
+ * Log request and response code/headers to track issues with calling the API.
  * @param string $method         HTTP Method.
  * @param string $url            The endpoint.
  * @param object $data           Data to send via the body.
@@ -71,18 +71,28 @@ function processErrorResponse($error) {
         "ErrorCode": "InvalidModelState"
     }
     */
-    echo "\n" . json_encode($error, JSON_PRETTY_PRINT) . "\n";
     return $result;
 }
 
 /**
+ * Log an issue to PHP error log and stop further processing.
+ * @param string $error The error to be logged.
+ * @return void
+ */
+function logErrorAndDie($error) {
+    error_log($error);  // Location of this log can be found with ini_get('error_log')
+    die($error);
+}
+
+/**
  * Call an endpoint of the OpenAPI.
- * @param string $method      HTTP Method.
- * @param string $url         The endpoint.
- * @param object $data        Data to send via the body.
+ * @param string $method                    HTTP Method.
+ * @param string $url                       The endpoint.
+ * @param object $data                      Data to send via the body.
+ * @param object $isRequestIdHeaderRequired When true, include a unique numer to prevent 409 Conflict error when two identical orders are placed within 15 seconds.
  * @return object
  */
-function getApiResponse($method, $url, $data) {
+function getApiResponse($method, $url, $data, $isRequestIdHeaderRequired) {
     global $openApiBaseUrl;
     global $accessToken;
     $ch = curl_init($openApiBaseUrl . $url);
@@ -92,6 +102,9 @@ function getApiResponse($method, $url, $data) {
     $header = array(
         'Authorization: Bearer ' . $accessToken  // CURLOPT_XOAUTH2_BEARER is added in cURL 7.33.0. Available since PHP 7.0.7.
     );
+    if ($isRequestIdHeaderRequired) {
+        $header[] = 'X-Request-ID: ' . random_int(PHP_INT_MIN, PHP_INT_MAX);
+    }
     if ($data != null) {
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));  // The full data to post in a HTTP "POST" operation. This parameter can either be passed as a urlencoded string like 'para1=val1&para2=val2&...' or as an array with the field name as key and field data as value.
         $header[] = 'Content-Type: application/json; charset=utf-8';  // This is different than the token request content!
@@ -110,6 +123,10 @@ function getApiResponse($method, $url, $data) {
         CURLOPT_HTTPHEADER     => $header  // An array of HTTP header fields to set, in the format array('Content-type: text/plain', 'Content-length: 100')
     ));
     $response = curl_exec($ch);
+    if ($response === false) {
+        // Something bad happened (couldn't reach the server). No internet conection?
+        return logErrorAndDie('Error connecting to ' . $method . ' ' . $url . ': ' . curl_error($ch));
+    }
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);  // As of cURL 7.10.8, this is a legacy alias of CURLINFO_RESPONSE_CODE
     $header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
     curl_close($ch);
@@ -122,18 +139,19 @@ function getApiResponse($method, $url, $data) {
             // No response body, but response code indicates success https://developer.mozilla.org/en-US/docs/Web/HTTP/Status#successful_responses
             return null;
         } else {
-            die('Error with response HTTP ' . $httpCode);
+            // Don't quit immediately. Contruct a valid error and continue.
+            $body = '{"ErrorCode":"' . $httpCode . '","Message":"' . trim($headers[0]) . '"}';
         }
     }
     $responseJson = json_decode($body);
     if (json_last_error() == JSON_ERROR_NONE) {
         if ($httpCode >= 400) {
-            die('Error: ' . processErrorResponse($responseJson));
+            logErrorAndDie('Error: ' . processErrorResponse($responseJson));
         }
         return $responseJson;
     } else {
         // Something bad happened, no JSON in response.
-        die('Error: ' . $response . ' (' . $url . ')');
+        logErrorAndDie('Error parsing JSON response of request ' . $method . ' ' . $url . ': ' . $body);
     }
 }
 
@@ -144,7 +162,7 @@ function getApiResponse($method, $url, $data) {
  * @return string
  */
 function getUicByIsin($isin, $assetTypes) {
-    $instrumentsResponse = getApiResponse('GET', '/ref/v1/instruments?IncludeNonTradable=false&Keywords=' . urlencode($isin) . '&AssetTypes=' . urlencode($assetTypes), null);
+    $instrumentsResponse = getApiResponse('GET', '/ref/v1/instruments?IncludeNonTradable=false&Keywords=' . urlencode($isin) . '&AssetTypes=' . urlencode($assetTypes), null, false);
     if (count($instrumentsResponse->Data) == 0) {
         die('Instrument not found. Isin: ' . $isin);
     }
@@ -178,7 +196,7 @@ function placeOrder($uic, $assetType) {
         'ManualOrder' => true
     );
     // Use the X-Request-ID header is you don't want two of the same orders being blocked.
-    $ordersResponse = getApiResponse('POST', '/trade/v2/orders', $data);
+    $ordersResponse = getApiResponse('POST', '/trade/v2/orders', $data, true);
     echo "\nOrders response: " . json_encode($ordersResponse, JSON_PRETTY_PRINT) . "\n";
 }
 

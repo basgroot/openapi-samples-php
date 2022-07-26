@@ -5,7 +5,7 @@ $accessToken = '';
 $openApiBaseUrl = 'https://gateway.saxobank.com/sim/openapi';
 
 /**
- * Log request and response code/headers.
+ * Log request and response code/headers to track issues with calling the API.
  * @param string $method         HTTP Method.
  * @param string $url            The endpoint.
  * @param object $data           Data to send via the body.
@@ -74,6 +74,11 @@ function processErrorResponse($error) {
     return $result;
 }
 
+/**
+ * Log an issue to PHP error log and stop further processing.
+ * @param string $error The error to be logged.
+ * @return void
+ */
 function logErrorAndDie($error) {
     error_log($error);  // Location of this log can be found with ini_get('error_log')
     // This function should die after an unsuccessful request. But for this demo, it doesn't.
@@ -149,11 +154,25 @@ function getApiResponse($method, $url, $data) {
 }
 
 /**
+ * Trigger 401 Unauthorized.
+ */
+function trigger401Unauthorized() {
+    global $accessToken;
+    echo PHP_EOL . 'Trigger 401 Unauthorized:' . PHP_EOL;
+    // Replace access token with empty one.
+    $accessTokenBackup = $accessToken;
+    $accessToken = '';
+    getApiResponse('GET', '/ref/v1/instruments/details/21/FxStock', null);
+    // And restore for further requests.
+    $accessToken = $accessTokenBackup;
+}
+
+/**
  * Trigger 404 Not Found.
  */
 function trigger404NotFound() {
     echo PHP_EOL . 'Trigger 404 NotFound:' . PHP_EOL;
-    // The regular 404 ('GET', '/ref/v1/invalid', null) returns HTML - this shouln't be handled in the API.
+    // The regular 404 ('GET', '/ref/v1/invalid', null) returns HTML - this shouldn't be handled in the API.
     getApiResponse('GET', '/ref/v1/instruments/details/123456789/Stock', null);
 }
 
@@ -171,6 +190,7 @@ function trigger400BadRequest() {
 function trigger429TooManyRequests() {
     $result = null;
     $requestCount = 0;
+    // Ref data can be requested 60 times per minute. Request until this limit is reached.
     echo PHP_EOL . 'Trigger 429 TooManyRequests:' . PHP_EOL;
     do {
         $requestCount += 1;
@@ -183,6 +203,7 @@ if ($accessToken === '') {
     // Only for demonstration purposes:
     die('You must add an access (bearer) token first. Get your 24-hour token here https://www.developer.saxo/openapi/token/current, or create an app and request one.');
 }
+trigger401Unauthorized();
 trigger404NotFound();
 trigger400BadRequest();
 trigger429TooManyRequests();
